@@ -272,22 +272,20 @@ section[data-testid="stSidebar"] {
 # a persistent fixed button that re-opens the sidebar via JS interaction note.
 st.markdown("""
 <div style="position:fixed;top:0.65rem;left:0.65rem;z-index:999999;">
-  <a href="javascript:void(0)"
-     onclick="
-       var sb = window.parent.document.querySelector('[data-testid=stSidebar]');
-       var btn = window.parent.document.querySelector('[data-testid=collapsedControl]');
-       if(btn){ btn.click(); }
-     "
-     style="display:inline-flex;align-items:center;justify-content:center;
-            width:38px;height:38px;background:#1B3A5C;color:white;
-            border-radius:8px;font-size:1.25rem;text-decoration:none;
-            box-shadow:0 2px 8px rgba(0,0,0,0.28);
-            transition:background 0.2s;"
-     title="Open / close settings panel"
-     onmouseover="this.style.background='#0E7C7B'"
-     onmouseout="this.style.background='#1B3A5C'">
+  <button onclick="
+    var btn = window.parent.document.querySelector('[data-testid=collapsedControl]');
+    if(btn){ btn.click(); }
+    return false;
+  "
+  style="display:inline-flex;align-items:center;justify-content:center;
+         width:38px;height:38px;background:#1B3A5C;color:white;
+         border-radius:8px;font-size:1.25rem;border:none;cursor:pointer;
+         box-shadow:0 2px 8px rgba(0,0,0,0.28);transition:background 0.2s;"
+  title="Open / close settings panel"
+  onmouseover="this.style.background='#0E7C7B'"
+  onmouseout="this.style.background='#1B3A5C'">
     &#9776;
-  </a>
+  </button>
 </div>
 """, unsafe_allow_html=True)
 
