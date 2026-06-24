@@ -9,7 +9,7 @@ import json
 
 st.set_page_config(
     page_title="AHP-MCDA Simulator",
-    page_icon="📊",
+    page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -367,28 +367,39 @@ S = st.session_state
 # HERO
 # ══════════════════════════════════════════════════════════════════════════════
 
+# render logo above the hero banner
 st.markdown("""
-<div class="hero">
-  <div style="display:flex;align-items:center;gap:1.2rem;margin-bottom:.8rem;">
-    <svg width="64" height="64" viewBox="0 0 250 250" style="flex-shrink:0;border-radius:16px;background:rgba(255,255,255,0.12);">
-      <rect x="40" y="112" width="170" height="26" rx="4" fill="#94a3b8"/>
-      <rect x="57" y="82"  width="136" height="26" rx="4" fill="#8B4500"/>
-      <rect x="74" y="52"  width="102" height="26" rx="4" fill="#C47A00"/>
-      <rect x="91" y="22"  width="68"  height="26" rx="4" fill="#2E8B57"/>
-      <line x1="103" y1="35"  x2="147" y2="35"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <line x1="87"  y1="65"  x2="163" y2="65"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <line x1="70"  y1="95"  x2="180" y2="95"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <circle cx="22"  cy="72"  r="5" fill="#2E75B6" opacity="0.75"/>
-      <circle cx="228" cy="62"  r="4" fill="#2E75B6" opacity="0.65"/>
-      <circle cx="16"  cy="100" r="4" fill="#2E75B6" opacity="0.55"/>
-      <circle cx="234" cy="95"  r="5" fill="#2E75B6" opacity="0.75"/>
-      <circle cx="19"  cy="44"  r="3" fill="#2E75B6" opacity="0.50"/>
-      <circle cx="231" cy="130" r="4" fill="#2E75B6" opacity="0.65"/>
-      <circle cx="225" cy="40"  r="3" fill="#2E75B6" opacity="0.55"/>
-      <circle cx="28"  cy="132" r="4" fill="#2E75B6" opacity="0.60"/>
+<div style="display:flex;justify-content:center;margin-bottom:1rem;">
+  <div style="background:#F4F7FB;border:1.5px solid #D0DAE8;border-radius:24px;
+              width:220px;height:220px;display:flex;align-items:center;
+              justify-content:center;position:relative;">
+    <svg width="180" height="140" viewBox="0 0 180 140">
+      <!-- Tier 1 - top, narrowest -->
+      <rect x="66" y="4"  width="48" height="26" rx="4" fill="#2E8B57"/>
+      <!-- Tier 2 -->
+      <rect x="49" y="36" width="82" height="26" rx="4" fill="#C47A00"/>
+      <!-- Tier 3 -->
+      <rect x="32" y="68" width="116" height="26" rx="4" fill="#8B4500"/>
+      <!-- Tier 4 - base, widest -->
+      <rect x="15" y="100" width="150" height="26" rx="4" fill="#94a3b8"/>
+      <!-- White tick marks -->
+      <line x1="78"  y1="17"  x2="102" y2="17"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
+      <line x1="61"  y1="49"  x2="119" y2="49"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
+      <line x1="44"  y1="81"  x2="136" y2="81"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
+      <!-- Monte Carlo scatter dots -->
+      <circle cx="6"   cy="52"  r="3.5" fill="#2E75B6" opacity="0.75"/>
+      <circle cx="174" cy="42"  r="3"   fill="#2E75B6" opacity="0.65"/>
+      <circle cx="4"   cy="80"  r="2.5" fill="#2E75B6" opacity="0.55"/>
+      <circle cx="176" cy="75"  r="3.5" fill="#2E75B6" opacity="0.75"/>
+      <circle cx="7"   cy="28"  r="2.5" fill="#2E75B6" opacity="0.50"/>
+      <circle cx="173" cy="108" r="3"   fill="#2E75B6" opacity="0.65"/>
+      <circle cx="168" cy="26"  r="2.5" fill="#2E75B6" opacity="0.55"/>
+      <circle cx="12"  cy="110" r="3"   fill="#2E75B6" opacity="0.60"/>
     </svg>
-    <h1 style="margin:0;">AHP-MCDA Monte Carlo Simulator</h1>
   </div>
+</div>
+<div class="hero">
+  <h1>AHP-MCDA Monte Carlo Simulator</h1>
   <p>Rank any set of options across multiple criteria — with scientifically grounded weights,
   automatic tier classification, and Monte Carlo robustness validation.
   Follow the steps below. Each step unlocks after the previous one is complete.</p>
