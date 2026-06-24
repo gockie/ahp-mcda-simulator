@@ -28,7 +28,7 @@ Both modes then:
 
 ## Live demo
 
-**[Launch the app →](https://your-app-url.streamlit.app)**
+**[Launch the app →](https://ahp-mcda-simulator.streamlit.app/)**
 
 The app loads the Canadian Basin Screening example by default (13 basins, 16 criteria, from the paper above). You can replace this with your own criteria, alternatives, and scores for any MCDA application.
 
