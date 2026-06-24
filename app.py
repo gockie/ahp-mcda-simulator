@@ -367,39 +367,26 @@ S = st.session_state
 # HERO
 # ══════════════════════════════════════════════════════════════════════════════
 
-# render logo above the hero banner
 st.markdown("""
-<div style="display:flex;justify-content:center;margin-bottom:1rem;">
-  <div style="background:#F4F7FB;border:1.5px solid #D0DAE8;border-radius:24px;
-              width:220px;height:220px;display:flex;align-items:center;
-              justify-content:center;position:relative;">
-    <svg width="180" height="140" viewBox="0 0 180 140">
-      <!-- Tier 1 - top, narrowest -->
-      <rect x="66" y="4"  width="48" height="26" rx="4" fill="#2E8B57"/>
-      <!-- Tier 2 -->
-      <rect x="49" y="36" width="82" height="26" rx="4" fill="#C47A00"/>
-      <!-- Tier 3 -->
-      <rect x="32" y="68" width="116" height="26" rx="4" fill="#8B4500"/>
-      <!-- Tier 4 - base, widest -->
-      <rect x="15" y="100" width="150" height="26" rx="4" fill="#94a3b8"/>
-      <!-- White tick marks -->
-      <line x1="78"  y1="17"  x2="102" y2="17"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <line x1="61"  y1="49"  x2="119" y2="49"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <line x1="44"  y1="81"  x2="136" y2="81"  stroke="white" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/>
-      <!-- Monte Carlo scatter dots -->
-      <circle cx="6"   cy="52"  r="3.5" fill="#2E75B6" opacity="0.75"/>
-      <circle cx="174" cy="42"  r="3"   fill="#2E75B6" opacity="0.65"/>
-      <circle cx="4"   cy="80"  r="2.5" fill="#2E75B6" opacity="0.55"/>
-      <circle cx="176" cy="75"  r="3.5" fill="#2E75B6" opacity="0.75"/>
-      <circle cx="7"   cy="28"  r="2.5" fill="#2E75B6" opacity="0.50"/>
-      <circle cx="173" cy="108" r="3"   fill="#2E75B6" opacity="0.65"/>
-      <circle cx="168" cy="26"  r="2.5" fill="#2E75B6" opacity="0.55"/>
-      <circle cx="12"  cy="110" r="3"   fill="#2E75B6" opacity="0.60"/>
-    </svg>
-  </div>
-</div>
 <div class="hero">
-  <h1>AHP-MCDA Monte Carlo Simulator</h1>
+  <div style="display:flex;align-items:center;gap:1.4rem;margin-bottom:.9rem;">
+    <svg width="72" height="72" viewBox="0 0 180 140" style="flex-shrink:0;border-radius:14px;background:rgba(255,255,255,0.13);padding:8px;">
+      <rect x="66" y="4"   width="48"  height="26" rx="4" fill="#2E8B57"/>
+      <rect x="49" y="36"  width="82"  height="26" rx="4" fill="#C47A00"/>
+      <rect x="32" y="68"  width="116" height="26" rx="4" fill="#8B4500"/>
+      <rect x="15" y="100" width="150" height="26" rx="4" fill="#94a3b8"/>
+      <line x1="78"  y1="17"  x2="102" y2="17"  stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+      <line x1="61"  y1="49"  x2="119" y2="49"  stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+      <line x1="44"  y1="81"  x2="136" y2="81"  stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+      <circle cx="6"   cy="52"  r="5" fill="#2E75B6" opacity="0.75"/>
+      <circle cx="174" cy="42"  r="4" fill="#2E75B6" opacity="0.65"/>
+      <circle cx="4"   cy="80"  r="4" fill="#2E75B6" opacity="0.55"/>
+      <circle cx="176" cy="75"  r="5" fill="#2E75B6" opacity="0.75"/>
+      <circle cx="7"   cy="28"  r="3" fill="#2E75B6" opacity="0.50"/>
+      <circle cx="173" cy="108" r="4" fill="#2E75B6" opacity="0.65"/>
+    </svg>
+    <h1 style="margin:0;">AHP-MCDA Monte Carlo Simulator</h1>
+  </div>
   <p>Rank any set of options across multiple criteria — with scientifically grounded weights,
   automatic tier classification, and Monte Carlo robustness validation.
   Follow the steps below. Each step unlocks after the previous one is complete.</p>
