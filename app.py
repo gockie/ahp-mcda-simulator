@@ -1075,6 +1075,10 @@ elif S.step == 6:
 
     df_mc = None; df_st = None  # populated inside expander after MC runs
 
+    tier_labels = {1:"🟢 Tier 1 — Priority",2:"🟡 Tier 2 — Secondary",
+                   3:"🟠 Tier 3 — Low priority",4:"⚫ Tier 4 — Marginal"}
+    tier_css = {1:"result-tier-1",2:"result-tier-2",3:"result-tier-3",4:"result-tier-4"}
+
     # ── SETTINGS + ROBUSTNESS TEST (all inside expander) ─────────────────────
     with st.expander("⚙️  Simulation settings & Monte Carlo robustness test", expanded=False):
         sc1, sc2, sc3 = st.columns(3)
@@ -1175,10 +1179,6 @@ elif S.step == 6:
                 'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
                 'margin:1.2rem 0 .9rem;">Rankings and tier classification</div>',
                 unsafe_allow_html=True)
-
-    tier_labels = {1:"🟢 Tier 1 — Priority",2:"🟡 Tier 2 — Secondary",
-                   3:"🟠 Tier 3 — Low priority",4:"⚫ Tier 4 — Marginal"}
-    tier_css = {1:"result-tier-1",2:"result-tier-2",3:"result-tier-3",4:"result-tier-4"}
 
     # Score table
     df_s = pd.DataFrame({
