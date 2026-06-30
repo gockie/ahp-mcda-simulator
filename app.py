@@ -1077,6 +1077,8 @@ elif S.step == 6:
 
     tier_labels = {1:"🟢 Tier 1 — Priority",2:"🟡 Tier 2 — Secondary",
                    3:"🟠 Tier 3 — Low priority",4:"⚫ Tier 4 — Marginal"}
+    tier_labels_plain = {1:"Tier 1 - Priority",2:"Tier 2 - Secondary",
+                         3:"Tier 3 - Low priority",4:"Tier 4 - Marginal"}
     tier_css = {1:"result-tier-1",2:"result-tier-2",3:"result-tier-3",4:"result-tier-4"}
 
     # ── SETTINGS + ROBUSTNESS TEST (all inside expander) ─────────────────────
@@ -1131,7 +1133,7 @@ elif S.step == 6:
                 'Your weight': [f"{w:.4f}" for w in weights],
                 'Avg across simulations': [f"{m:.4f}" for m in S.mu],
                 'Variability (σᵢ)': [f"{s:.5f}" for s in sig],
-                'Stable?': ['✅ Yes' if s<=0.010 else '⚠️ Check' for s in sig]
+                'Stable?': ['Yes' if s<=0.010 else 'Check' for s in sig]
             })
             st.dataframe(df_mc, use_container_width=True, hide_index=True)
 
@@ -1145,9 +1147,9 @@ elif S.step == 6:
             df_st = pd.DataFrame({
                 'Alternative': anames,
                 'Score': [f"{s:.4f}" for s in scores],
-                'Tier': [tier_labels.get(t, f"Tier {t}") for t in tiers],
+                'Tier': [tier_labels_plain.get(t, f"Tier {t}") for t in tiers],
                 'Tier stability': [f"{p:.2f}%" for p in stab],
-                'Verdict': ['✅ Robust' if p>=99.5 else '⚠️ Review' for p in stab]
+                'Verdict': ['Robust' if p>=99.5 else 'Review' for p in stab]
             })
             st.dataframe(df_st, use_container_width=True, hide_index=True)
 
@@ -1183,9 +1185,9 @@ elif S.step == 6:
     # Score table
     df_s = pd.DataFrame({
         'Alternative': anames,
-        'Composite Score (0–1)': [f"{s:.4f}" for s in scores],
+        'Composite Score (0-1)': [f"{s:.4f}" for s in scores],
         'Rank': pd.Series(scores).rank(ascending=False).astype(int).values,
-        'Priority Tier': [tier_labels.get(t, f"Tier {t}") for t in tiers]
+        'Priority Tier': [tier_labels_plain.get(t, f"Tier {t}") for t in tiers]
     }).sort_values('Rank').reset_index(drop=True)
     st.dataframe(df_s, use_container_width=True, hide_index=True)
 
