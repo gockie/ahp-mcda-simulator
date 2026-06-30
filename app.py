@@ -1073,8 +1073,10 @@ elif S.step == 6:
     tiers = S.tiers; breaks = S.breaks; P = S.P
     n_tiers = S.n_tiers; n_a = len(anames); n_c = len(cnames)
 
-    # ── SETTINGS INLINE ──────────────────────────────────────────────────────
-    with st.expander("⚙️  Simulation settings", expanded=False):
+    df_mc = None; df_st = None  # populated inside expander after MC runs
+
+    # ── SETTINGS + ROBUSTNESS TEST (all inside expander) ─────────────────────
+    with st.expander("⚙️  Simulation settings & Monte Carlo robustness test", expanded=False):
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             S.n_iter = st.select_slider("Simulations (N)",
@@ -1092,19 +1094,81 @@ elif S.step == 6:
                     tiers = S.tiers; breaks = S.breaks
                 st.rerun()
 
+        st.markdown("---")
+        st.markdown(f"""<div class="callout">
+        The app will rerun your entire analysis <b>{S.n_iter:,} times</b> with slightly
+        different weights each time, simulating expert judgement uncertainty.
+        If rankings and tier assignments stay stable across those runs, your results
+        are <b>robust and trustworthy</b>.
+        An alternative is considered <b>robustly classified</b> if it stays in its tier
+        in &ge; 99.5% of simulations.
+        </div>""", unsafe_allow_html=True)
+
+        pm = S.pairwise_M if S.weight_mode == "expert" else None
+
+        if st.button(f"▶  Run {S.n_iter:,} simulations", type="primary"):
+            with st.spinner(f"Running {S.n_iter:,} simulations — please wait..."):
+                aw, as_ = run_mc(weights, P, pm, S.n_iter, S.p_perturb)
+                S.mc_w = aw; S.mc_s = as_; S.ran_mc = True
+                S.sigma = aw.std(axis=0); S.mu = aw.mean(axis=0)
+                S.stab = [(assign_tiers(as_[:,b], breaks)==tiers[b]).mean()*100
+                          for b in range(n_a)]
+            st.success(f"✅ {S.n_iter:,} simulations complete.")
+            st.rerun()
+
         if S.ran_mc and S.mc_w is not None:
-            st.markdown("---")
-            st.markdown(f"**Convergence from your last run ({S.n_iter:,} simulations):** "
-                        "use this to judge whether N is already large enough, or whether "
-                        "you can safely reduce it.")
-            fig_cv_settings = plot_conv(S.mc_w, cnames, weights, top_n=min(4,n_c))
-            st.pyplot(fig_cv_settings, use_container_width=True); plt.close(fig_cv_settings)
-            st.caption("If the curves have flattened well before the right edge, you can "
-                       "lower N above and re-run for a faster simulation with the same "
-                       "level of confidence.")
+            aw = S.mc_w; as_ = S.mc_s
+            sig = S.sigma; stab = S.stab
+
+            # Weight uncertainty table
+            st.markdown("**Weight variability across simulations:**")
+            df_mc = pd.DataFrame({
+                'Criterion': cnames,
+                'Your weight': [f"{w:.4f}" for w in weights],
+                'Avg across simulations': [f"{m:.4f}" for m in S.mu],
+                'Variability (σᵢ)': [f"{s:.5f}" for s in sig],
+                'Stable?': ['✅ Yes' if s<=0.010 else '⚠️ Check' for s in sig]
+            })
+            st.dataframe(df_mc, use_container_width=True, hide_index=True)
+
+            r1,r2,r3 = st.columns(3)
+            r1.metric("Max weight variability (σ)", f"{sig.max():.5f}")
+            r2.metric("Mean weight variability (σ)", f"{sig.mean():.5f}")
+            r3.metric("Simulations run", f"{S.n_iter:,}")
+
+            # Tier stability table
+            st.markdown("**Tier stability:**")
+            df_st = pd.DataFrame({
+                'Alternative': anames,
+                'Score': [f"{s:.4f}" for s in scores],
+                'Tier': [tier_labels.get(t, f"Tier {t}") for t in tiers],
+                'Tier stability': [f"{p:.2f}%" for p in stab],
+                'Verdict': ['✅ Robust' if p>=99.5 else '⚠️ Review' for p in stab]
+            })
+            st.dataframe(df_st, use_container_width=True, hide_index=True)
+
+            if all(p>=99.5 for p in stab):
+                st.markdown(f"""<div class="callout ok">
+                ✅ <b>All {n_a} alternatives are robustly classified.</b>
+                Every option retained its tier in &ge; 99.5% of {S.n_iter:,} simulations.
+                </div>""", unsafe_allow_html=True)
+            else:
+                n_w = sum(p<99.5 for p in stab)
+                st.markdown(f"""<div class="callout warn">
+                ⚠️ <b>{n_w} alternative(s) are below 99.5% stability.</b>
+                These are close to tier boundaries — review their criteria scores carefully.
+                </div>""", unsafe_allow_html=True)
+
+            # Convergence plots
+            st.markdown("**Convergence charts:**")
+            st.caption("Use these to judge whether N is large enough. "
+                       "If curves flatten well before the right edge, you can lower N and re-run.")
+            fig_cv = plot_conv(aw, cnames, weights, top_n=min(4,n_c))
+            st.pyplot(fig_cv, use_container_width=True); plt.close(fig_cv)
+            fig_st = plot_stability(as_, anames, tiers, breaks, S.n_iter)
+            st.pyplot(fig_st, use_container_width=True); plt.close(fig_st)
         else:
-            st.info("Run a simulation at least once to see a convergence preview here — "
-                    "it'll help you judge whether N is larger than it needs to be.")
+            st.info("Run a simulation above to see robustness results and convergence charts here.")
 
     # ── DETERMINISTIC RESULTS ─────────────────────────────────────────────────
     st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
@@ -1151,82 +1215,6 @@ elif S.step == 6:
     fig_p = plot_pareto(weights, cnames)
     st.pyplot(fig_p, use_container_width=True); plt.close(fig_p)
 
-    # ── MONTE CARLO ───────────────────────────────────────────────────────────
-    st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
-                'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
-                'margin:1.2rem 0 .9rem;">Monte Carlo robustness test</div>',
-                unsafe_allow_html=True)
-    st.markdown(f"""<div class="callout">
-    The app will rerun your entire analysis <b>{S.n_iter:,} times</b> with slightly
-    different weights each time, simulating expert judgement uncertainty.
-    If rankings and tier assignments stay stable across those runs, your results
-    are <b>robust and trustworthy</b>.
-    An alternative is considered <b>robustly classified</b> if it stays in its tier
-    in ≥ 99.5% of simulations.
-    </div>""", unsafe_allow_html=True)
-
-    pm = S.pairwise_M if S.weight_mode == "expert" else None
-
-    if st.button(f"▶  Run {S.n_iter:,} simulations", type="primary"):
-        with st.spinner(f"Running {S.n_iter:,} simulations — please wait..."):
-            aw, as_ = run_mc(weights, P, pm, S.n_iter, S.p_perturb)
-            S.mc_w = aw; S.mc_s = as_; S.ran_mc = True
-            S.sigma = aw.std(axis=0); S.mu = aw.mean(axis=0)
-            S.stab = [(assign_tiers(as_[:,b], breaks)==tiers[b]).mean()*100
-                      for b in range(n_a)]
-        st.success(f"✅ {S.n_iter:,} simulations complete.")
-        st.rerun()
-
-    if S.ran_mc and S.mc_w is not None:
-        aw = S.mc_w; as_ = S.mc_s
-        sig = S.sigma; stab = S.stab
-
-        # Weight uncertainty table
-        st.markdown("**Weight variability across simulations:**")
-        df_mc = pd.DataFrame({
-            'Criterion': cnames,
-            'Your weight': [f"{w:.4f}" for w in weights],
-            'Avg across simulations': [f"{m:.4f}" for m in S.mu],
-            'Variability (σᵢ)': [f"{s:.5f}" for s in sig],
-            'Stable?': ['✅ Yes' if s<=0.010 else '⚠️ Check' for s in sig]
-        })
-        st.dataframe(df_mc, use_container_width=True, hide_index=True)
-
-        r1,r2,r3 = st.columns(3)
-        r1.metric("Max weight variability (σ)", f"{sig.max():.5f}")
-        r2.metric("Mean weight variability (σ)", f"{sig.mean():.5f}")
-        r3.metric("Simulations run", f"{S.n_iter:,}")
-
-        # Tier stability table
-        st.markdown("**Tier stability:**")
-        df_st = pd.DataFrame({
-            'Alternative': anames,
-            'Score': [f"{s:.4f}" for s in scores],
-            'Tier': [tier_labels.get(t, f"Tier {t}") for t in tiers],
-            'Tier stability': [f"{p:.2f}%" for p in stab],
-            'Verdict': ['✅ Robust' if p>=99.5 else '⚠️ Review' for p in stab]
-        })
-        st.dataframe(df_st, use_container_width=True, hide_index=True)
-
-        if all(p>=99.5 for p in stab):
-            st.markdown(f"""<div class="callout ok">
-            ✅ <b>All {n_a} alternatives are robustly classified.</b>
-            Every option retained its tier in ≥ 99.5% of {S.n_iter:,} simulations.
-            </div>""", unsafe_allow_html=True)
-        else:
-            n_w = sum(p<99.5 for p in stab)
-            st.markdown(f"""<div class="callout warn">
-            ⚠️ <b>{n_w} alternative(s) are below 99.5% stability.</b>
-            These are close to tier boundaries — review their criteria scores carefully.
-            </div>""", unsafe_allow_html=True)
-
-        # Convergence plots
-        st.markdown("**Convergence charts (quality check):**")
-        fig_cv = plot_conv(aw, cnames, weights, top_n=min(4,n_c))
-        st.pyplot(fig_cv, use_container_width=True); plt.close(fig_cv)
-        fig_st = plot_stability(as_, anames, tiers, breaks, S.n_iter)
-        st.pyplot(fig_st, use_container_width=True); plt.close(fig_st)
-
     # ── EXPORT ────────────────────────────────────────────────────────────────
     st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
                 'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
@@ -1269,7 +1257,7 @@ elif S.step == 6:
             df_asgn.to_csv(index=False), "assignments.csv", "text/csv",
             use_container_width=True)
 
-    if S.ran_mc and S.sigma is not None:
+    if S.ran_mc and S.sigma is not None and df_mc is not None and df_st is not None:
         e5,e6 = st.columns(2)
         with e5:
             st.download_button("📥  Monte Carlo weight stats (CSV)",
