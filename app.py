@@ -338,6 +338,7 @@ def init_state():
         step=1,
         # Step 1 — criteria names
         criteria=[],
+        is_demo=False,
         # Step 2 — weights per criterion (raw, will be normalised)
         raw_weights={},
         weight_mode='quick',   # 'quick' or 'expert'
@@ -501,12 +502,14 @@ PNG, or JSON.
                     "Industry maturity","Onshore / offshore","Accessibility",
                     "Infrastructure","CO₂ source proximity"
                 ]
+                S.is_demo = True
             else:
                 cnames = [c.strip() for c in crit_txt.strip().split("\n") if c.strip()]
                 if len(cnames) < 2:
                     st.error("Please enter at least 2 criteria.")
                     st.stop()
                 S.criteria = cnames
+                S.is_demo = False
 
             # Reset downstream state when criteria change
             S.raw_weights = {}; S.class_defs = {}
@@ -650,6 +653,30 @@ elif S.step == 2:
                            'Weight':[f"{w:.4f}" for w in S.weights],
                            'Share':[f"{w*100:.1f}%" for w in S.weights]})
         st.dataframe(df_w,use_container_width=True,hide_index=True)
+
+    # Literature reference box for demo data
+    if S.is_demo:
+        with st.expander("📚  Literature sources for the example weights", expanded=False):
+            st.markdown("""
+The default example weights follow the criterion importance hierarchy established in the
+CO₂ storage screening literature, specifically storage capacity as the dominant criterion,
+CO₂ source proximity as the primary economic feasibility driver, and reservoir-seal quality
+as the principal containment criterion:
+
+- Bachu, S. (2003). Screening and ranking of sedimentary basins for sequestration of CO₂
+  in geological media in response to climate change. *Environmental Geology*, 44(3), 277–289.
+  https://doi.org/10.1007/s00254-003-0762-9
+- Metz, B., Davidson, O., de Coninck, H., Loos, M., & Meyer, L. (Eds.) (2005).
+  *IPCC Special Report on Carbon Dioxide Capture and Storage*. Cambridge University Press.
+- Celia, M.A., Bachu, S., Nordbotten, J.M., & Bandilla, K.W. (2015). Status of CO₂ storage
+  in deep saline aquifers with emphasis on modeling approaches and practical simulations.
+  *Water Resources Research*, 51(9), 6846–6892. https://doi.org/10.1002/2015WR017609
+- Middleton, R.S., & Bielicki, J.M. (2009). A scalable infrastructure model for carbon
+  capture and storage: SimCCS. *Energy Policy*, 37(3), 1052–1060.
+
+These weights are a starting reference only — adjust them to reflect your own judgement
+or research context.
+            """)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1064,6 +1091,20 @@ elif S.step == 6:
                     S.tiers = assign_tiers(scores, breaks_new)
                     tiers = S.tiers; breaks = S.breaks
                 st.rerun()
+
+        if S.ran_mc and S.mc_w is not None:
+            st.markdown("---")
+            st.markdown(f"**Convergence from your last run ({S.n_iter:,} simulations):** "
+                        "use this to judge whether N is already large enough, or whether "
+                        "you can safely reduce it.")
+            fig_cv_settings = plot_conv(S.mc_w, cnames, weights, top_n=min(4,n_c))
+            st.pyplot(fig_cv_settings, use_container_width=True); plt.close(fig_cv_settings)
+            st.caption("If the curves have flattened well before the right edge, you can "
+                       "lower N above and re-run for a faster simulation with the same "
+                       "level of confidence.")
+        else:
+            st.info("Run a simulation at least once to see a convergence preview here — "
+                    "it'll help you judge whether N is larger than it needs to be.")
 
     # ── DETERMINISTIC RESULTS ─────────────────────────────────────────────────
     st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
