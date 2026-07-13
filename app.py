@@ -372,7 +372,7 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
                  fontsize=11,fontweight='bold',color=DARK,fontfamily=FONT)
     ax1.set_facecolor('#F9FAFB')
     # Use distinct colors per alternative (not per tier) so overlapping lines are visible
-    cmap = plt.cm.get_cmap('tab20', max(len(names), 1))
+    cmap = plt.colormaps['tab20'].resampled(max(len(names), 1))
     alt_colors = [cmap(i) for i in range(len(names))]
     final_stabs = []
     for b in range(len(names)):
