@@ -6,6 +6,73 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import io
 import json
+try:
+    from pptx import Presentation
+    from pptx.util import Inches
+    _PPTX_OK = True
+except ImportError:
+    _PPTX_OK = False
+
+def fig_to_png_bytes(fig, dpi=150):
+    """Return a matplotlib figure as PNG bytes."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
+    buf.seek(0)
+    return buf.getvalue()
+
+def fig_to_pptx_bytes(fig, title="", dpi=150):
+    """Embed a matplotlib figure in a 13.3x7.5 inch PPTX slide and return bytes."""
+    png = fig_to_png_bytes(fig, dpi=dpi)
+    prs = Presentation()
+    prs.slide_width  = Inches(13.3)
+    prs.slide_height = Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    if title:
+        from pptx.util import Pt
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN
+        txb = slide.shapes.add_textbox(Inches(0.3), Inches(0.08), Inches(12.7), Inches(0.42))
+        tf  = txb.text_frame
+        p   = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+        run = p.add_run(); run.text = title
+        run.font.size = Pt(14); run.font.bold = True
+        run.font.color.rgb = RGBColor(0x1B, 0x3A, 0x5C)
+        run.font.name = "Calibri"
+    pic_y = Inches(0.55) if title else Inches(0.1)
+    pic_h = Inches(6.85) if title else Inches(7.3)
+    slide.shapes.add_picture(io.BytesIO(png), Inches(0.3), pic_y, Inches(12.7), pic_h)
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+def fig_download_buttons(fig, stem, title=""):
+    """Render PNG and (if pptx available) PPTX download buttons for a figure."""
+    png_bytes = fig_to_png_bytes(fig)
+    c1, c2, c3 = st.columns([1, 1, 4])
+    with c1:
+        st.download_button(
+            "📥 Download PNG",
+            data=png_bytes,
+            file_name=f"{stem}.png",
+            mime="image/png",
+            use_container_width=True,
+            key=f"dl_png_{stem}"
+        )
+    with c2:
+        if _PPTX_OK:
+            pptx_bytes = fig_to_pptx_bytes(fig, title=title)
+            st.download_button(
+                "📥 Download PPTX",
+                data=pptx_bytes,
+                file_name=f"{stem}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+                key=f"dl_pptx_{stem}"
+            )
+        else:
+            st.caption("Install python-pptx to enable PPTX download.")
 
 st.set_page_config(
     page_title="AHP-MCDA Simulator",
@@ -288,6 +355,12 @@ def plot_conv(aw,names,w_det,top_n=4):
     plt.tight_layout(rect=[0,0,1,.93]); return fig
 
 def plot_stability(as_,names,det_tiers,breaks,n_iter):
+    # Pre-compute tier assignments correctly: for each simulation run,
+    # classify ALL alternatives together against the shared breaks.
+    # as_ shape: (n_iter, n_alternatives)
+    all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks) for s in range(n_iter)])
+    # all_sim_tiers shape: (n_iter, n_alternatives)
+
     cps=np.unique(np.concatenate([
         np.arange(100,min(1000,n_iter),200),
         np.arange(1000,n_iter+1,max(500,n_iter//30))])).astype(int)
@@ -299,7 +372,7 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
                  fontsize=11,fontweight='bold',color=DARK,fontfamily=FONT)
     ax1.set_facecolor('#F9FAFB')
     for b in range(len(names)):
-        stab=[(assign_tiers(as_[:cp,b],breaks)==det_tiers[b]).mean()*100 for cp in cps]
+        stab=[(all_sim_tiers[:cp,b]==det_tiers[b]).mean()*100 for cp in cps]
         ax1.plot(cps,stab,color=TC.get(det_tiers[b],'#888'),
                  lw=1.5,ls=styles[b%len(styles)],alpha=.85,label=names[b])
     ax1.axhline(99.5,color=RED,lw=1.8,ls='--',label='99.5% threshold')
@@ -315,7 +388,7 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
     cp_pts=np.linspace(int(n_iter*.05),n_iter,5,dtype=int)
     cp_lbls=[f'N={p:,}' for p in cp_pts]; x=np.arange(len(cp_pts)); width=.12
     for shift,b in enumerate(range(n_show)):
-        vals=[(assign_tiers(as_[:cp,b],breaks)==det_tiers[b]).mean()*100 for cp in cp_pts]
+        vals=[(all_sim_tiers[:cp,b]==det_tiers[b]).mean()*100 for cp in cp_pts]
         ax2.bar(x+(shift-n_show/2)*width,vals,width*.88,label=names[b][:18],
                 color=TC.get(det_tiers[b],'#888'),alpha=.80,edgecolor='white',lw=.8)
     ax2.axhline(99.5,color=RED,lw=1.8,ls='--',label='99.5% threshold')
@@ -1117,7 +1190,12 @@ elif S.step == 6:
                 aw, as_ = run_mc(weights, P, pm, S.n_iter, S.p_perturb)
                 S.mc_w = aw; S.mc_s = as_; S.ran_mc = True
                 S.sigma = aw.std(axis=0); S.mu = aw.mean(axis=0)
-                S.stab = [(assign_tiers(as_[:,b], breaks)==tiers[b]).mean()*100
+                # Correctly compute tier stability: for each simulation run,
+                # classify ALL alternatives together against the shared breaks,
+                # then check each alternative's tier against its deterministic tier.
+                all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks)
+                                          for s in range(S.n_iter)])
+                S.stab = [(all_sim_tiers[:,b]==tiers[b]).mean()*100
                           for b in range(n_a)]
             st.success(f"✅ {S.n_iter:,} simulations complete.")
             st.rerun()
@@ -1170,9 +1248,13 @@ elif S.step == 6:
             st.caption("Use these to judge whether N is large enough. "
                        "If curves flatten well before the right edge, you can lower N and re-run.")
             fig_cv = plot_conv(aw, cnames, weights, top_n=min(4,n_c))
-            st.pyplot(fig_cv, use_container_width=True); plt.close(fig_cv)
+            st.pyplot(fig_cv, use_container_width=True)
+            fig_download_buttons(fig_cv, "convergence_chart", "Monte Carlo Weight Convergence")
+            plt.close(fig_cv)
             fig_st = plot_stability(as_, anames, tiers, breaks, S.n_iter)
-            st.pyplot(fig_st, use_container_width=True); plt.close(fig_st)
+            st.pyplot(fig_st, use_container_width=True)
+            fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
+            plt.close(fig_st)
         else:
             st.info("Run a simulation above to see robustness results and convergence charts here.")
 
@@ -1203,7 +1285,9 @@ elif S.step == 6:
     if n_a >= 2:
         jenks_breaks, gvf = jenks(scores, S.n_tiers)
         fig_s = plot_scores(np.array(anames), scores, tiers, breaks, S.n_tiers)
-        st.pyplot(fig_s, use_container_width=True); plt.close(fig_s)
+        st.pyplot(fig_s, use_container_width=True)
+        fig_download_buttons(fig_s, "basin_scores_chart", "Basin Composite Scores and Tier Classification")
+        plt.close(fig_s)
         st.caption("Bar length = composite score. Colour = tier. "
                    "Dashed lines = Jenks-Fisher tier boundaries (data-driven).")
         st.metric("Classification quality (GVF)", f"{gvf:.4f}",
@@ -1215,7 +1299,9 @@ elif S.step == 6:
                 'margin:1.2rem 0 .9rem;">Criterion weight breakdown</div>',
                 unsafe_allow_html=True)
     fig_p = plot_pareto(weights, cnames)
-    st.pyplot(fig_p, use_container_width=True); plt.close(fig_p)
+    st.pyplot(fig_p, use_container_width=True)
+    fig_download_buttons(fig_p, "pareto_weights_chart", "AHP Criterion Weights — Pareto Chart")
+    plt.close(fig_p)
 
     # ── EXPORT ────────────────────────────────────────────────────────────────
     st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
