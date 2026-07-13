@@ -371,19 +371,17 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
     fig.suptitle('Monte Carlo Stability — Does each option stay in its tier?',
                  fontsize=11,fontweight='bold',color=DARK,fontfamily=FONT)
     ax1.set_facecolor('#F9FAFB')
-    # Use distinct colors per alternative (not per tier) so overlapping lines are visible
     cmap = plt.colormaps['tab20'].resampled(max(len(names), 1))
     alt_colors = [cmap(i) for i in range(len(names))]
-    final_stabs = []
+    all_stab_values = []
     for b in range(len(names)):
         stab=[(all_sim_tiers[:cp,b]==det_tiers[b]).mean()*100 for cp in cps]
-        final_stabs.append(stab[-1] if stab else 100)
+        all_stab_values.extend(stab)
         ax1.plot(cps,stab,color=alt_colors[b],
                  lw=1.5,ls=styles[b%len(styles)],alpha=.85,label=names[b])
     ax1.axhline(99.5,color=RED,lw=1.8,ls='--',label='99.5% threshold')
-    # Dynamically set y-axis: zoom in if all values are tightly clustered near 100%
-    min_stab = min(final_stabs) if final_stabs else 85
-    y_min = max(80, min_stab - 5) if min_stab < 99 else 99.0
+    global_min = min(all_stab_values) if all_stab_values else 85
+    y_min = 99.0 if global_min >= 99.0 else max(80, global_min - 2)
     ax1.set_ylim(y_min, 100.5)
     ax1.set_xlabel('Simulations run',fontsize=9,fontfamily=FONT)
     ax1.set_ylabel('% simulations where tier stays the same',fontsize=9,fontfamily=FONT)
