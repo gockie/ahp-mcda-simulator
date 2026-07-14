@@ -354,7 +354,81 @@ def plot_conv(aw,names,w_det,top_n=4):
         ax.grid(True,color='#E0E0E0',lw=.6); ax.tick_params(labelsize=8)
     plt.tight_layout(rect=[0,0,1,.93]); return fig
 
-def plot_stability(all_sim_tiers,names,det_tiers,breaks,n_iter):
+def plot_weights_box(aw, w_det, names):
+    """Horizontal box plot of MC weight distributions with deterministic weight markers."""
+    n_c = len(names)
+    # Sort criteria by deterministic weight descending (highest at top)
+    order = np.argsort(w_det)[::-1]
+
+    # Compute box statistics from actual MC data
+    q1   = np.percentile(aw, 25, axis=0)
+    q3   = np.percentile(aw, 75, axis=0)
+    mu   = aw.mean(axis=0)
+    sig  = aw.std(axis=0)
+    wlo  = np.maximum(mu - 3*sig, 0)
+    whi  = mu + 3*sig
+
+    fig, ax = plt.subplots(figsize=(10, max(5, n_c * 0.42 + 1)), facecolor='white')
+    ax.set_facecolor('#FAFBFC')
+
+    BOX_CLR  = '#A8C0D6'
+    LINE_CLR = '#7A9AB8'
+    DIAM_CLR = '#E07030'
+
+    y_positions = list(range(n_c))
+
+    for rank, ci in enumerate(order):
+        y = rank
+        # Whisker line (full simulated range ±3σ)
+        ax.plot([wlo[ci], whi[ci]], [y, y], color=LINE_CLR, lw=1.4, solid_capstyle='round')
+        # Whisker end caps
+        cap_h = 0.18
+        ax.plot([wlo[ci], wlo[ci]], [y-cap_h, y+cap_h], color=LINE_CLR, lw=1.2)
+        ax.plot([whi[ci], whi[ci]], [y-cap_h, y+cap_h], color=LINE_CLR, lw=1.2)
+        # IQR box
+        box_h = 0.40
+        rect = plt.Rectangle((q1[ci], y - box_h/2), q3[ci]-q1[ci], box_h,
+                              facecolor=BOX_CLR, edgecolor=LINE_CLR, lw=1.0, zorder=3)
+        ax.add_patch(rect)
+        # Deterministic weight diamond
+        ax.plot(w_det[ci], y, marker='D', color=DIAM_CLR, markersize=7,
+                markeredgecolor='white', markeredgewidth=0.5, zorder=5)
+
+    # y-axis labels: criterion names sorted by weight
+    y_labels = [f'{names[ci]}' for ci in order]
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(y_labels, fontsize=9, color='black', fontweight='bold')
+    ax.invert_yaxis()
+
+    ax.set_xlabel('Criterion weight wᵢ', fontsize=11, color='black', fontweight='bold')
+    ax.set_xlim(left=0)
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.3f}'))
+    ax.tick_params(axis='x', labelsize=9, colors='black')
+    ax.tick_params(axis='y', length=0)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_edgecolor('black')
+    ax.grid(axis='x', color='#E0E0E0', lw=0.6, zorder=0)
+
+    # Legend
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Line2D([0], [0], marker='D', color='w', markerfacecolor=DIAM_CLR,
+               markeredgecolor='white', markersize=8, label='Deterministic AHP weight'),
+        Patch(facecolor=BOX_CLR, edgecolor=LINE_CLR, label='IQR (25th–75th percentile)'),
+        Line2D([0], [0], color=LINE_CLR, lw=1.4, label='Full simulated range (±3σ)'),
+    ]
+    ax.legend(handles=legend_elements, fontsize=8.5, framealpha=0.95,
+              loc='lower right', edgecolor='#CCCCCC')
+
+    ax.set_title('Monte Carlo Perturbation Distributions — AHP Criterion Weights',
+                 fontsize=11, fontweight='bold', color='black', pad=10)
+    plt.tight_layout()
+    return fig
+
+
     # all_sim_tiers: pre-computed (n_iter, n_alternatives) array from session state
     # ensures chart and table use identical tier assignments
 
@@ -428,8 +502,8 @@ def plot_stability(all_sim_tiers,names,det_tiers,breaks,n_iter):
 
         # Stability lines
         for i, (b, curve) in enumerate(zip(basin_indices, curves)):
-            ax.plot(cps, curve, color=alt_colors[b], lw=1.6,
-                    ls=styles[i % len(styles)], alpha=0.9, label=names[b])
+            ax.plot(cps, curve, color=alt_colors[b], lw=2.0,
+                    ls=styles[i % len(styles)], alpha=1.0, label=names[b])
 
         ax.axhline(99.5, color=RED, lw=2.0, ls='--',
                    label='99.5% threshold', zorder=5)
@@ -1312,6 +1386,10 @@ elif S.step == 6:
             st.pyplot(fig_cv, use_container_width=True)
             fig_download_buttons(fig_cv, "convergence_chart", "Monte Carlo Weight Convergence")
             plt.close(fig_cv)
+            fig_wb = plot_weights_box(aw, weights, cnames)
+            st.pyplot(fig_wb, use_container_width=True)
+            fig_download_buttons(fig_wb, "weights_box_plot", "Monte Carlo AHP Weight Distributions")
+            plt.close(fig_wb)
             fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
             st.pyplot(fig_st, use_container_width=True)
             fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
