@@ -354,8 +354,9 @@ def plot_conv(aw,names,w_det,top_n=4):
         ax.grid(True,color='#E0E0E0',lw=.6); ax.tick_params(labelsize=8)
     plt.tight_layout(rect=[0,0,1,.93]); return fig
 
-def plot_stability(as_,names,det_tiers,breaks,n_iter):
-    all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks) for s in range(n_iter)])
+def plot_stability(all_sim_tiers,names,det_tiers,breaks,n_iter):
+    # all_sim_tiers: pre-computed (n_iter, n_alternatives) array from session state
+    # ensures chart and table use identical tier assignments
 
     cps = np.unique(np.concatenate([
         np.arange(100, min(1000, n_iter), 100),
@@ -364,14 +365,11 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
 
     ref_pts = [p for p in [1000, 3000, 5000, 10000, 15000, 20000] if p <= n_iter]
 
-    # Identify 5 boundary-proximate basins
-    scores_det = np.array([as_[:,b].mean() for b in range(len(names))])
-    if len(breaks) > 0:
-        dists = np.array([min(abs(scores_det[b] - br) for br in breaks)
-                          for b in range(len(names))])
-        boundary_idx = np.argsort(dists)[:5]
-    else:
-        boundary_idx = np.arange(min(5, len(names)))
+    # Identify 5 boundary-proximate basins by finding those with lowest
+    # mean tier stability (closest to changing tier)
+    stab_final = np.array([(all_sim_tiers[:, b] == det_tiers[b]).mean()
+                            for b in range(len(names))])
+    boundary_idx = np.argsort(stab_final)[:5]
 
     styles = ['-','--','-.',':', (0,(3,1,1,1)),'-','--','-.',':',(0,(3,1,1,1)),
               '-','--','-.',':', (0,(3,1,1,1)),'-','--','-.']
@@ -488,6 +486,7 @@ def init_state():
         # Results
         weights=None, scores=None, tiers=None, breaks=None, P=None,
         ran_mc=False, mc_w=None, mc_s=None, sigma=None, mu=None, stab=None,
+        all_sim_tiers=None,
         n_tiers=4, n_iter=10000, p_perturb=0.30,
     )
     for k,v in defaults.items():
@@ -1256,6 +1255,7 @@ elif S.step == 6:
                 # then check each alternative's tier against its deterministic tier.
                 all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks)
                                           for s in range(S.n_iter)])
+                S.all_sim_tiers = all_sim_tiers
                 S.stab = [(all_sim_tiers[:,b]==tiers[b]).mean()*100
                           for b in range(n_a)]
             st.success(f"✅ {S.n_iter:,} simulations complete.")
@@ -1312,7 +1312,7 @@ elif S.step == 6:
             st.pyplot(fig_cv, use_container_width=True)
             fig_download_buttons(fig_cv, "convergence_chart", "Monte Carlo Weight Convergence")
             plt.close(fig_cv)
-            fig_st = plot_stability(as_, anames, tiers, breaks, S.n_iter)
+            fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
             st.pyplot(fig_st, use_container_width=True)
             fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
             plt.close(fig_st)
