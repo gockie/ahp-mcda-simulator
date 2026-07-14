@@ -355,76 +355,89 @@ def plot_conv(aw,names,w_det,top_n=4):
     plt.tight_layout(rect=[0,0,1,.93]); return fig
 
 def plot_stability(as_,names,det_tiers,breaks,n_iter):
-    # Pre-compute tier assignments correctly: for each simulation run,
-    # classify ALL alternatives together against the shared breaks.
+    # Pre-compute tier assignments: for each simulation run, classify ALL
+    # alternatives together against the shared deterministic breaks.
     all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks) for s in range(n_iter)])
 
-    # Sensitivity test checkpoints as described in the paper
-    raw_pts = [1000, 5000, 10000, 15000, 20000]
-    cp_pts  = [p for p in raw_pts if p <= n_iter]
-    if n_iter not in cp_pts:
-        cp_pts.append(n_iter)
-    cp_labels = [f'N={p:,}' for p in cp_pts]
+    # Running stability checkpoints
+    cps = np.unique(np.concatenate([
+        np.arange(100, min(1000, n_iter), 100),
+        np.arange(1000, n_iter + 1, max(200, n_iter // 50))])).astype(int)
+    cps = cps[cps <= n_iter]
 
-    # Stability at each checkpoint for each basin
-    stab_matrix = np.array([
-        [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100
-         for b in range(len(names))]
-        for cp in cp_pts
-    ])  # shape: (n_checkpoints, n_basins)
+    # Sensitivity test reference points (from paper methodology)
+    ref_pts = [p for p in [1000, 3000, 5000, 10000, 15000, 20000] if p <= n_iter]
 
-    # Find 5 boundary-proximate basins (closest to any tier break)
-    scores_det = np.array([as_[0, b] for b in range(len(names))])
-    dists = np.array([min(abs(scores_det[b] - br) for br in breaks) for b in range(len(names))])
-    boundary_idx = np.argsort(dists)[:5]
+    # Identify 5 boundary-proximate basins
+    scores_det = np.array([as_[:,b].mean() for b in range(len(names))])
+    if len(breaks) > 0:
+        dists = np.array([min(abs(scores_det[b] - br) for br in breaks)
+                          for b in range(len(names))])
+        boundary_idx = np.argsort(dists)[:5]
+    else:
+        boundary_idx = np.arange(min(5, len(names)))
 
-    line_colors = plt.colormaps['plasma'].resampled(max(len(cp_pts), 1))
-    lc = [line_colors(i) for i in range(len(cp_pts))]
-    x = np.arange(len(names))
+    styles = ['-','--','-.',':', (0,(3,1,1,1)),'-','--','-.',':',(0,(3,1,1,1)),
+              '-','--','-.',':', (0,(3,1,1,1)),'-','--','-.']
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5), facecolor='white')
     fig.suptitle('Monte Carlo Sensitivity Test — Tier Assignment Stability',
                  fontsize=11, fontweight='bold', color=DARK, fontfamily=FONT)
 
-    # ── Panel (a): all 13 basins ─────────────────────────────────────────────
+    cmap = plt.colormaps['tab20'].resampled(max(len(names), 1))
+    alt_colors = [cmap(i) for i in range(len(names))]
+
+    # ── Panel (a): all alternatives ──────────────────────────────────────────
     ax1.set_facecolor('#F9FAFB')
-    for i, (cp, lbl) in enumerate(zip(cp_pts, cp_labels)):
-        ax1.plot(x, stab_matrix[i], color=lc[i], lw=1.8,
-                 marker='o', markersize=5, label=lbl, zorder=3)
-    ax1.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=2)
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(names, rotation=45, ha='right', fontsize=7.5, fontfamily=FONT)
-    ax1.set_ylabel('Tier stability (%)', fontsize=9, fontfamily=FONT)
-    ax1.set_title('(a) All 13 basins', fontsize=10, fontweight='bold',
-                  color=DARK, fontfamily=FONT)
-    all_vals = stab_matrix.flatten()
-    y_min = 99.0 if all_vals.min() >= 99.0 else max(75, all_vals.min() - 3)
+    all_vals = []
+    for b in range(len(names)):
+        stab = [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100 for cp in cps]
+        all_vals.extend(stab)
+        ax1.plot(cps, stab, color=alt_colors[b], lw=1.3,
+                 ls=styles[b % len(styles)], alpha=0.85, label=names[b])
+    ax1.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=5)
+    # Vertical reference lines at sensitivity test checkpoints
+    for rp in ref_pts:
+        ax1.axvline(rp, color='#AAAAAA', lw=0.8, ls=':', alpha=0.7, zorder=2)
+        ax1.text(rp, ax1.get_ylim()[0] if all_vals else 85,
+                 f'N={rp:,}', fontsize=6, color='#888888',
+                 ha='center', va='bottom', rotation=90)
+    global_min = min(all_vals) if all_vals else 85
+    y_min = 99.0 if global_min >= 99.0 else max(80, global_min - 2)
     ax1.set_ylim(y_min, 100.8)
-    ax1.grid(axis='y', color='#E0E0E0', lw=0.6)
+    ax1.set_xlabel('Simulations run', fontsize=9, fontfamily=FONT)
+    ax1.set_ylabel('% simulations where tier stays the same', fontsize=9, fontfamily=FONT)
+    ax1.set_title('(a) All alternatives', fontsize=10, fontweight='bold',
+                  color=DARK, fontfamily=FONT)
+    ax1.grid(True, color='#E0E0E0', lw=0.5, zorder=0)
     ax1.tick_params(labelsize=8)
-    ax1.legend(fontsize=8, framealpha=0.9, loc='lower right',
-               title='Sample size', title_fontsize=8)
+    if len(names) <= 15:
+        ax1.legend(fontsize=6.5, framealpha=0.9, ncol=2, loc='lower right')
 
     # ── Panel (b): 5 boundary-proximate basins ───────────────────────────────
     ax2.set_facecolor('#F9FAFB')
-    xb = np.arange(len(boundary_idx))
-    for i, (cp, lbl) in enumerate(zip(cp_pts, cp_labels)):
-        ax2.plot(xb, stab_matrix[i, boundary_idx], color=lc[i], lw=1.8,
-                 marker='o', markersize=6, label=lbl, zorder=3)
-    ax2.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=2)
-    ax2.set_xticks(xb)
-    ax2.set_xticklabels([names[b] for b in boundary_idx],
-                        rotation=45, ha='right', fontsize=8, fontfamily=FONT)
-    ax2.set_ylabel('Tier stability (%)', fontsize=9, fontfamily=FONT)
-    ax2.set_title('(b) Five boundary-proximate basins', fontsize=10,
-                  fontweight='bold', color=DARK, fontfamily=FONT)
-    sub_vals = stab_matrix[:, boundary_idx].flatten()
-    y_min2 = 99.0 if sub_vals.min() >= 99.0 else max(75, sub_vals.min() - 3)
+    sub_vals = []
+    for i, b in enumerate(boundary_idx):
+        stab = [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100 for cp in cps]
+        sub_vals.extend(stab)
+        ax2.plot(cps, stab, color=alt_colors[b], lw=1.8,
+                 ls=styles[i % len(styles)], alpha=0.9, label=names[b])
+    ax2.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=5)
+    for rp in ref_pts:
+        ax2.axvline(rp, color='#AAAAAA', lw=0.8, ls=':', alpha=0.7, zorder=2)
+        ax2.text(rp, ax2.get_ylim()[0] if sub_vals else 85,
+                 f'N={rp:,}', fontsize=6.5, color='#888888',
+                 ha='center', va='bottom', rotation=90)
+    sub_min = min(sub_vals) if sub_vals else 85
+    y_min2 = 99.0 if sub_min >= 99.0 else max(80, sub_min - 2)
     ax2.set_ylim(y_min2, 100.8)
-    ax2.grid(axis='y', color='#E0E0E0', lw=0.6)
+    ax2.set_xlabel('Simulations run', fontsize=9, fontfamily=FONT)
+    ax2.set_ylabel('% simulations where tier stays the same', fontsize=9, fontfamily=FONT)
+    ax2.set_title('(b) Five boundary-proximate alternatives', fontsize=10,
+                  fontweight='bold', color=DARK, fontfamily=FONT)
+    ax2.grid(True, color='#E0E0E0', lw=0.5, zorder=0)
     ax2.tick_params(labelsize=8)
-    ax2.legend(fontsize=8, framealpha=0.9, loc='lower right',
-               title='Sample size', title_fontsize=8)
+    ax2.legend(fontsize=7.5, framealpha=0.9, loc='lower right')
 
     plt.tight_layout(rect=[0, 0, 1, .93]); return fig
 
