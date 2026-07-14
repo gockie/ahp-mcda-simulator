@@ -1390,10 +1390,13 @@ elif S.step == 6:
             st.pyplot(fig_wb, use_container_width=True)
             fig_download_buttons(fig_wb, "weights_box_plot", "Monte Carlo AHP Weight Distributions")
             plt.close(fig_wb)
-            fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
-            st.pyplot(fig_st, use_container_width=True)
-            fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
-            plt.close(fig_st)
+            if S.all_sim_tiers is not None:
+                fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
+                st.pyplot(fig_st, use_container_width=True)
+                fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
+                plt.close(fig_st)
+            else:
+                st.info("Re-run the simulation once to generate the tier stability chart.")
         else:
             st.info("Run a simulation above to see robustness results and convergence charts here.")
 
