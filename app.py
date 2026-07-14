@@ -448,8 +448,13 @@ def plot_stability(all_sim_tiers, names, det_tiers, breaks, n_iter):
 
     styles = ['-','--','-.',':', (0,(3,1,1,1)),'-','--','-.',':',(0,(3,1,1,1)),
               '-','--','-.',':', (0,(3,1,1,1)),'-','--','-.']
-    cmap = plt.colormaps['tab20'].resampled(max(len(names), 1))
-    alt_colors = [cmap(i) for i in range(len(names))]
+    # Bold distinct colors — 13 max, all fully saturated
+    BOLD_COLORS = [
+        '#1B3A5C', '#E07030', '#2E8B57', '#C0392B', '#7B2D8B',
+        '#0E7C7B', '#8B6914', '#2E4A8B', '#C2185B', '#4A7C59',
+        '#5B3A8B', '#8B2E2E', '#2E7A8B'
+    ]
+    alt_colors = [BOLD_COLORS[i % len(BOLD_COLORS)] for i in range(len(names))]
 
     # ── Pre-compute all stability values to set y-axis BEFORE plotting ────────
     stab_all = []
