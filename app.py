@@ -357,55 +357,76 @@ def plot_conv(aw,names,w_det,top_n=4):
 def plot_stability(as_,names,det_tiers,breaks,n_iter):
     # Pre-compute tier assignments correctly: for each simulation run,
     # classify ALL alternatives together against the shared breaks.
-    # as_ shape: (n_iter, n_alternatives)
     all_sim_tiers = np.array([assign_tiers(as_[s,:], breaks) for s in range(n_iter)])
-    # all_sim_tiers shape: (n_iter, n_alternatives)
 
-    cps=np.unique(np.concatenate([
-        np.arange(100,min(1000,n_iter),200),
-        np.arange(1000,n_iter+1,max(500,n_iter//30))])).astype(int)
-    cps=cps[cps<=n_iter]
-    styles=['-','--','-.',':', (0,(3,1,1,1)),'-','--','-.',':',(0,(3,1,1,1)),
-            '-','--','-.',':', (0,(3,1,1,1)),'-','--','-.']
-    fig,(ax1,ax2)=plt.subplots(1,2,figsize=(12,5.5),facecolor='white')
-    fig.suptitle('Monte Carlo Stability — Does each option stay in its tier?',
-                 fontsize=11,fontweight='bold',color=DARK,fontfamily=FONT)
+    # Sensitivity test checkpoints as described in the paper
+    raw_pts = [1000, 5000, 10000, 15000, 20000]
+    cp_pts  = [p for p in raw_pts if p <= n_iter]
+    if n_iter not in cp_pts:
+        cp_pts.append(n_iter)
+    cp_labels = [f'N={p:,}' for p in cp_pts]
+
+    # Stability at each checkpoint for each basin
+    stab_matrix = np.array([
+        [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100
+         for b in range(len(names))]
+        for cp in cp_pts
+    ])  # shape: (n_checkpoints, n_basins)
+
+    # Find 5 boundary-proximate basins (closest to any tier break)
+    scores_det = np.array([as_[0, b] for b in range(len(names))])
+    dists = np.array([min(abs(scores_det[b] - br) for br in breaks) for b in range(len(names))])
+    boundary_idx = np.argsort(dists)[:5]
+
+    line_colors = plt.colormaps['plasma'].resampled(max(len(cp_pts), 1))
+    lc = [line_colors(i) for i in range(len(cp_pts))]
+    x = np.arange(len(names))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5), facecolor='white')
+    fig.suptitle('Monte Carlo Sensitivity Test — Tier Assignment Stability',
+                 fontsize=11, fontweight='bold', color=DARK, fontfamily=FONT)
+
+    # ── Panel (a): all 13 basins ─────────────────────────────────────────────
     ax1.set_facecolor('#F9FAFB')
-    cmap = plt.colormaps['tab20'].resampled(max(len(names), 1))
-    alt_colors = [cmap(i) for i in range(len(names))]
-    all_stab_values = []
-    for b in range(len(names)):
-        stab=[(all_sim_tiers[:cp,b]==det_tiers[b]).mean()*100 for cp in cps]
-        all_stab_values.extend(stab)
-        ax1.plot(cps,stab,color=alt_colors[b],
-                 lw=1.5,ls=styles[b%len(styles)],alpha=.85,label=names[b])
-    ax1.axhline(99.5,color=RED,lw=1.8,ls='--',label='99.5% threshold')
-    global_min = min(all_stab_values) if all_stab_values else 85
-    y_min = 99.0 if global_min >= 99.0 else max(80, global_min - 2)
-    ax1.set_ylim(y_min, 100.5)
-    ax1.set_xlabel('Simulations run',fontsize=9,fontfamily=FONT)
-    ax1.set_ylabel('% simulations where tier stays the same',fontsize=9,fontfamily=FONT)
-    ax1.set_title('(a) All alternatives',fontsize=10,fontweight='bold',
-                  color=DARK,fontfamily=FONT)
-    ax1.grid(True,color='#E0E0E0',lw=.6); ax1.tick_params(labelsize=8)
-    if len(names)<=15: ax1.legend(fontsize=6.5,framealpha=.9,ncol=2,loc='lower right')
+    for i, (cp, lbl) in enumerate(zip(cp_pts, cp_labels)):
+        ax1.plot(x, stab_matrix[i], color=lc[i], lw=1.8,
+                 marker='o', markersize=5, label=lbl, zorder=3)
+    ax1.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=2)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(names, rotation=45, ha='right', fontsize=7.5, fontfamily=FONT)
+    ax1.set_ylabel('Tier stability (%)', fontsize=9, fontfamily=FONT)
+    ax1.set_title('(a) All 13 basins', fontsize=10, fontweight='bold',
+                  color=DARK, fontfamily=FONT)
+    all_vals = stab_matrix.flatten()
+    y_min = 99.0 if all_vals.min() >= 99.0 else max(75, all_vals.min() - 3)
+    ax1.set_ylim(y_min, 100.8)
+    ax1.grid(axis='y', color='#E0E0E0', lw=0.6)
+    ax1.tick_params(labelsize=8)
+    ax1.legend(fontsize=8, framealpha=0.9, loc='lower right',
+               title='Sample size', title_fontsize=8)
+
+    # ── Panel (b): 5 boundary-proximate basins ───────────────────────────────
     ax2.set_facecolor('#F9FAFB')
-    n_show=min(6,len(names))
-    cp_pts=np.linspace(int(n_iter*.05),n_iter,5,dtype=int)
-    cp_lbls=[f'N={p:,}' for p in cp_pts]; x=np.arange(len(cp_pts)); width=.12
-    for shift,b in enumerate(range(n_show)):
-        vals=[(all_sim_tiers[:cp,b]==det_tiers[b]).mean()*100 for cp in cp_pts]
-        ax2.bar(x+(shift-n_show/2)*width,vals,width*.88,label=names[b][:18],
-                color=TC.get(det_tiers[b],'#888'),alpha=.80,edgecolor='white',lw=.8)
-    ax2.axhline(99.5,color=RED,lw=1.8,ls='--',label='99.5% threshold')
-    ax2.set_xticks(x); ax2.set_xticklabels(cp_lbls,fontsize=8.5,fontfamily=FONT)
-    ax2.set_ylim(80,101.5); ax2.set_ylabel('Tier stability (%)',fontsize=9,fontfamily=FONT)
-    ax2.set_title('(b) Spot-checks at key simulation counts',fontsize=10,
-                  fontweight='bold',color=DARK,fontfamily=FONT)
-    ax2.grid(axis='y',color='#E0E0E0',lw=.6); ax2.tick_params(labelsize=8)
-    ax2.legend(fontsize=7,framealpha=.92,loc='lower right',
-               title='Alternative',title_fontsize=7)
-    plt.tight_layout(rect=[0,0,1,.93]); return fig
+    xb = np.arange(len(boundary_idx))
+    for i, (cp, lbl) in enumerate(zip(cp_pts, cp_labels)):
+        ax2.plot(xb, stab_matrix[i, boundary_idx], color=lc[i], lw=1.8,
+                 marker='o', markersize=6, label=lbl, zorder=3)
+    ax2.axhline(99.5, color=RED, lw=1.8, ls='--', label='99.5% threshold', zorder=2)
+    ax2.set_xticks(xb)
+    ax2.set_xticklabels([names[b] for b in boundary_idx],
+                        rotation=45, ha='right', fontsize=8, fontfamily=FONT)
+    ax2.set_ylabel('Tier stability (%)', fontsize=9, fontfamily=FONT)
+    ax2.set_title('(b) Five boundary-proximate basins', fontsize=10,
+                  fontweight='bold', color=DARK, fontfamily=FONT)
+    sub_vals = stab_matrix[:, boundary_idx].flatten()
+    y_min2 = 99.0 if sub_vals.min() >= 99.0 else max(75, sub_vals.min() - 3)
+    ax2.set_ylim(y_min2, 100.8)
+    ax2.grid(axis='y', color='#E0E0E0', lw=0.6)
+    ax2.tick_params(labelsize=8)
+    ax2.legend(fontsize=8, framealpha=0.9, loc='lower right',
+               title='Sample size', title_fontsize=8)
+
+    plt.tight_layout(rect=[0, 0, 1, .93]); return fig
 
 
 # ══════════════════════════════════════════════════════════════════════════════
