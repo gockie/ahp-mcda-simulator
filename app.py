@@ -394,11 +394,20 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
         stab_sub.extend(curve)
 
     def get_ylim(vals):
-        g = min(vals) if vals else 85
-        if g >= 99.8:   return (99.5, 100.15)   # all at 100% — zoom tight
-        elif g >= 99.0: return (99.0, 100.5)
-        elif g >= 95.0: return (94.0, 100.8)
-        else:           return (max(75, g - 2), 100.8)
+        if not vals:
+            return (80, 100.8)
+        g = min(vals)
+        r = max(vals) - g   # actual range of data
+        pad = max(r * 0.3, 0.1)   # at least 0.1% padding above/below
+        y_lo = max(0, g - pad)
+        y_hi = min(101, max(vals) + pad)
+        # Snap lower bound to nearest "nice" value
+        if y_lo >= 99.5:   y_lo = 99.0
+        elif y_lo >= 98.0: y_lo = 97.5
+        elif y_lo >= 95.0: y_lo = 94.0
+        elif y_lo >= 90.0: y_lo = 89.0
+        else:              y_lo = max(0, round(y_lo - 2))
+        return (y_lo, y_hi)
 
     y1 = get_ylim(stab_all)
     y2 = get_ylim(stab_sub)
