@@ -414,33 +414,49 @@ def plot_stability(as_,names,det_tiers,breaks,n_iter):
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5), facecolor='white')
     fig.suptitle('Monte Carlo Sensitivity Test — Tier Assignment Stability',
-                 fontsize=11, fontweight='bold', color=DARK, fontfamily=FONT)
+                 fontsize=12, fontweight='bold', color='black', fontfamily=FONT)
 
     def draw_panel(ax, curves, basin_indices, ylims, title):
         ax.set_facecolor('#F9FAFB')
         ax.set_ylim(*ylims)
-        # Vertical reference lines (labelled at TOP of plot)
+        n_shown = len(basin_indices)
+
+        # Vertical reference lines
         for rp in ref_pts:
-            ax.axvline(rp, color='#BBBBBB', lw=0.8, ls=':', zorder=2)
+            ax.axvline(rp, color='#CCCCCC', lw=0.8, ls=':', zorder=2)
             ax.text(rp, ylims[1] - (ylims[1]-ylims[0])*0.03,
-                    f'N={rp:,}', fontsize=6, color='#888888',
-                    ha='center', va='top', rotation=90)
+                    f'N={rp:,}', fontsize=7, color='black',
+                    fontweight='bold', ha='center', va='top', rotation=90)
+
         # Stability lines
         for i, (b, curve) in enumerate(zip(basin_indices, curves)):
-            ax.plot(cps, curve, color=alt_colors[b], lw=1.4,
-                    ls=styles[i % len(styles)], alpha=0.85, label=names[b])
-        ax.axhline(99.5, color=RED, lw=1.8, ls='--',
-                   label='99.5% threshold', zorder=5)
-        ax.set_xlabel('Simulations run', fontsize=9, fontfamily=FONT)
-        ax.set_ylabel('% simulations where tier stays the same',
-                      fontsize=9, fontfamily=FONT)
-        ax.set_title(title, fontsize=10, fontweight='bold',
-                     color=DARK, fontfamily=FONT)
-        ax.grid(True, color='#E0E0E0', lw=0.5, zorder=0)
-        ax.tick_params(labelsize=8)
-        ax.legend(fontsize=6.5, framealpha=0.9, ncol=2, loc='lower right')
+            ax.plot(cps, curve, color=alt_colors[b], lw=1.6,
+                    ls=styles[i % len(styles)], alpha=0.9, label=names[b])
 
-    draw_panel(ax1, stab_curves, list(range(len(names))), y1, '(a) All alternatives')
+        ax.axhline(99.5, color=RED, lw=2.0, ls='--',
+                   label='99.5% threshold', zorder=5)
+
+        ax.set_xlabel('Simulations run', fontsize=10, fontfamily=FONT,
+                      color='black', fontweight='bold')
+        ax.set_ylabel('% simulations where tier stays the same',
+                      fontsize=10, fontfamily=FONT, color='black', fontweight='bold')
+        ax.set_title(title, fontsize=11, fontweight='bold',
+                     color='black', fontfamily=FONT)
+        ax.grid(True, color='#E0E0E0', lw=0.5, zorder=0)
+        ax.tick_params(labelsize=9, colors='black', labelcolor='black')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('black')
+
+        # Legend: single column for panel b (5 items), two columns for panel a
+        leg_ncol = 2 if n_shown > 6 else 1
+        leg = ax.legend(fontsize=7.5, framealpha=0.95, ncol=leg_ncol,
+                        loc='lower right', edgecolor='black')
+        for text in leg.get_texts():
+            text.set_color('black')
+            text.set_fontweight('bold')
+
+    draw_panel(ax1, stab_curves, list(range(len(names))), y1,
+               f'(a) All {len(names)} alternatives')
     draw_panel(ax2, stab_sub_curves, list(boundary_idx), y2,
                '(b) Five boundary-proximate alternatives')
 
