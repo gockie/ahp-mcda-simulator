@@ -429,6 +429,7 @@ def plot_weights_box(aw, w_det, names):
     return fig
 
 
+def plot_stability(all_sim_tiers, names, det_tiers, breaks, n_iter):
     # all_sim_tiers: pre-computed (n_iter, n_alternatives) array from session state
     # ensures chart and table use identical tier assignments
 
