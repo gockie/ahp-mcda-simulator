@@ -616,33 +616,32 @@ S = st.session_state
 # ANALYSIS MODES
 # ══════════════════════════════════════════════════════════════════════════════
 
-ICO_SLIDERS = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-  <line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.4" fill="white"/>
-  <line x1="3" y1="12" x2="21" y2="12"/><circle cx="16" cy="12" r="2.4" fill="white"/>
-  <line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.4" fill="white"/>
-</svg>"""
+ICO_SLIDERS = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
+               'stroke="currentColor" stroke-width="1.8" stroke-linecap="round">'
+               '<line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.4" fill="white"/>'
+               '<line x1="3" y1="12" x2="21" y2="12"/><circle cx="16" cy="12" r="2.4" fill="white"/>'
+               '<line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.4" fill="white"/>'
+               '</svg>')
 
-ICO_HIST = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-  <line x1="3" y1="20" x2="21" y2="20"/>
-  <rect x="4"  y="14" width="3" height="6"/><rect x="8.5" y="9" width="3" height="11"/>
-  <rect x="13" y="6"  width="3" height="14"/><rect x="17.5" y="12" width="3" height="8"/>
-</svg>"""
+ICO_HIST = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
+            'stroke="currentColor" stroke-width="1.8" stroke-linecap="round">'
+            '<line x1="3" y1="20" x2="21" y2="20"/>'
+            '<rect x="4" y="14" width="3" height="6"/><rect x="8.5" y="9" width="3" height="11"/>'
+            '<rect x="13" y="6" width="3" height="14"/><rect x="17.5" y="12" width="3" height="8"/>'
+            '</svg>')
 
-ICO_TREE = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-  <rect x="9" y="2.5" width="6" height="4.5" rx="1"/>
-  <rect x="2" y="16.5" width="6" height="4.5" rx="1"/>
-  <rect x="16" y="16.5" width="6" height="4.5" rx="1"/>
-  <path d="M12 7v4.5M5 16.5V12h14v4.5"/>
-</svg>"""
+ICO_TREE = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
+            'stroke="currentColor" stroke-width="1.8" stroke-linecap="round">'
+            '<rect x="9" y="2.5" width="6" height="4.5" rx="1"/>'
+            '<rect x="2" y="16.5" width="6" height="4.5" rx="1"/>'
+            '<rect x="16" y="16.5" width="6" height="4.5" rx="1"/>'
+            '<path d="M12 7v4.5M5 16.5V12h14v4.5"/></svg>')
 
-ICO_SHIELD = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M12 2.5 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6z"/>
-  <path d="M8.8 11.8 11.2 14.4 15.4 9.6"/>
-</svg>"""
+ICO_SHIELD = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
+              'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
+              'stroke-linejoin="round">'
+              '<path d="M12 2.5 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6z"/>'
+              '<path d="M8.8 11.8 11.2 14.4 15.4 9.6"/></svg>')
 
 MODES = {
     "mcda": {
@@ -801,22 +800,23 @@ if S.step == 1:
         m = MODES[key]
         with col:
             badge = ('<div class="mode-badge">Recommended</div>'
-                     if m.get("recommended") else '')
+                     if m.get("recommended") else "")
             spec_html = "".join(
-                f'<div style="color:{m["spec_col"]};">{s}</div>' if i == 2
-                else f'<div>{s}</div>'
-                for i, s in enumerate(m["spec"]))
-            st.markdown(f"""
-            <div class="mode-card{' rec' if m.get('recommended') else ''}">
-              {badge}
-              <div class="mode-ico" style="background:{m['ico_bg']};color:{m['ico_fg']};">
-                {m['ico']}
-              </div>
-              <div class="mode-title">{m['title']}</div>
-              <div class="mode-sub">{m['sub']}</div>
-              <div class="mode-spec">{spec_html}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                f'<div style="color:{m["spec_col"]};">{t}</div>' if i == 2
+                else f'<div>{t}</div>'
+                for i, t in enumerate(m["spec"]))
+            # Built as one unindented line: any leading whitespace or blank line
+            # would make Streamlit's markdown parser treat this as a code block.
+            st.markdown(
+                f'<div class="mode-card{" rec" if m.get("recommended") else ""}">'
+                f'{badge}'
+                f'<div class="mode-ico" style="background:{m["ico_bg"]};'
+                f'color:{m["ico_fg"]};">{m["ico"]}</div>'
+                f'<div class="mode-title">{m["title"]}</div>'
+                f'<div class="mode-sub">{m["sub"]}</div>'
+                f'<div class="mode-spec">{spec_html}</div>'
+                f'</div>',
+                unsafe_allow_html=True)
 
             picked = (S.analysis_mode == key)
             if st.button("Selected ✓" if picked else "Select",
