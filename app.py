@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import io
 import json
+from contextlib import nullcontext
 try:
     from pptx import Presentation
     from pptx.util import Inches
@@ -138,6 +139,29 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;color:var(--text);}
   border-radius:0 10px 10px 0;padding:.6rem 1rem;margin:.3rem 0;}
 .result-tier-4{background:#F5F5F5;border-left:5px solid #555;
   border-radius:0 10px 10px 0;padding:.6rem 1rem;margin:.3rem 0;}
+
+/* Step 1 — analysis mode cards */
+.mode-head{text-align:center;margin:.6rem 0 1.3rem;}
+.mode-head h2{font-size:1.35rem;font-weight:700;color:var(--navy);margin:0;}
+.mode-head p{font-size:.86rem;color:#6B7280;margin:.35rem 0 0;}
+.mode-card{background:white;border:1.5px solid var(--border);border-radius:14px;
+  padding:1.1rem 1.05rem .9rem;position:relative;margin-bottom:.55rem;}
+.mode-card.rec{border:2.5px solid var(--teal);padding:1.05rem 1rem .85rem;}
+.mode-badge{position:absolute;top:-.62rem;left:1rem;background:#E1F5EE;
+  color:#0F6E56;font-size:.65rem;font-weight:700;padding:.15rem .55rem;
+  border-radius:8px;letter-spacing:.3px;text-transform:uppercase;}
+.mode-ico{width:46px;height:46px;border-radius:11px;display:flex;
+  align-items:center;justify-content:center;margin-bottom:.75rem;}
+.mode-title{font-size:.98rem;font-weight:700;color:var(--navy);
+  line-height:1.3;min-height:2.55rem;}
+.mode-sub{font-size:.78rem;color:#6B7280;line-height:1.55;
+  margin:.35rem 0 .75rem;min-height:4.2rem;}
+.mode-spec{border-top:1px solid #E5EAF1;padding-top:.55rem;font-size:.74rem;
+  color:#4B5563;line-height:1.85;min-height:4.4rem;}
+.mode-chip{display:inline-flex;align-items:center;gap:.45rem;background:#EFF6FF;
+  border:1px solid #C7DBF2;border-radius:999px;padding:.28rem .8rem;
+  font-size:.76rem;font-weight:600;color:#1B3A5C;}
+.mode-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -211,7 +235,14 @@ def normalise_scores(raw_scores, all_possible_raw):
     if mx==mn: return np.ones(len(raw_scores))
     return np.array([(r-mn)/(mx-mn) for r in raw_scores])
 
-def run_mc(weights, P, pairwise_M, n_iter, p_perturb):
+def run_mc(weights, P, pairwise_M, n_iter, p_perturb, w_sigma_pct=3.0):
+    """Monte Carlo weight perturbation.
+
+    If pairwise_M is supplied (AHP modes), judgements are perturbed one step
+    along the Saaty scale and weights are re-derived from the perturbed matrix.
+    Otherwise (direct-weight modes), each weight is perturbed with Gaussian
+    noise whose standard deviation is w_sigma_pct percent of that weight.
+    """
     np.random.seed(42)
     n_c=len(weights); n_a=P.shape[0]
     aw=np.zeros((n_iter,n_c)); as_=np.zeros((n_iter,n_a))
@@ -233,7 +264,7 @@ def run_mc(weights, P, pairwise_M, n_iter, p_perturb):
             wp=np.maximum(wp,1e-6); wp/=wp.sum()
             aw[s]=wp; as_[s]=P@wp
     else:
-        sig=np.maximum(weights*0.03,0.002)
+        sig=np.maximum(weights*(w_sigma_pct/100.0),0.002)
         for s in range(n_iter):
             noise=np.random.normal(0,sig)
             mask=np.random.random(n_c)<p_perturb
@@ -354,7 +385,7 @@ def plot_conv(aw,names,w_det,top_n=4):
         ax.grid(True,color='#E0E0E0',lw=.6); ax.tick_params(labelsize=8)
     plt.tight_layout(rect=[0,0,1,.93]); return fig
 
-def plot_weights_box(aw, w_det, names):
+def plot_weights_box(aw, w_det, names, method_label='AHP'):
     """Horizontal box plot of MC weight distributions with deterministic weight markers."""
     n_c = len(names)
     # Sort criteria by deterministic weight descending (highest at top)
@@ -416,14 +447,15 @@ def plot_weights_box(aw, w_det, names):
     from matplotlib.patches import Patch
     legend_elements = [
         Line2D([0], [0], marker='D', color='w', markerfacecolor=DIAM_CLR,
-               markeredgecolor='white', markersize=8, label='Deterministic AHP weight'),
+               markeredgecolor='white', markersize=8,
+               label=f'Deterministic {method_label} weight'),
         Patch(facecolor=BOX_CLR, edgecolor=LINE_CLR, label='IQR (25th–75th percentile)'),
         Line2D([0], [0], color=LINE_CLR, lw=1.4, label='Full simulated range (±3σ)'),
     ]
     ax.legend(handles=legend_elements, fontsize=8.5, framealpha=0.95,
               loc='lower right', edgecolor='#CCCCCC')
 
-    ax.set_title('Monte Carlo Perturbation Distributions — AHP Criterion Weights',
+    ax.set_title(f'Monte Carlo Perturbation Distributions — {method_label} Criterion Weights',
                  fontsize=11, fontweight='bold', color='black', pad=10)
     plt.tight_layout()
     return fig
@@ -548,7 +580,9 @@ def plot_stability(all_sim_tiers, names, det_tiers, breaks, n_iter):
 def init_state():
     defaults = dict(
         step=1,
-        # Step 1 — criteria names
+        # Step 1 — analysis mode ('mcda', 'mcda_mc', 'ahp', 'ahp_mc')
+        analysis_mode=None,
+        # Step 2 — criteria names
         criteria=[],
         is_demo=False,
         # Step 2 — weights per criterion (raw, will be normalised)
@@ -568,6 +602,7 @@ def init_state():
         ran_mc=False, mc_w=None, mc_s=None, sigma=None, mu=None, stab=None,
         all_sim_tiers=None,
         n_tiers=4, n_iter=10000, p_perturb=0.30,
+        w_sigma_pct=3.0,
     )
     for k,v in defaults.items():
         if k not in st.session_state:
@@ -575,6 +610,109 @@ def init_state():
 
 init_state()
 S = st.session_state
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ANALYSIS MODES
+# ══════════════════════════════════════════════════════════════════════════════
+
+ICO_SLIDERS = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+  <line x1="3" y1="6" x2="21" y2="6"/><circle cx="9" cy="6" r="2.4" fill="white"/>
+  <line x1="3" y1="12" x2="21" y2="12"/><circle cx="16" cy="12" r="2.4" fill="white"/>
+  <line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="18" r="2.4" fill="white"/>
+</svg>"""
+
+ICO_HIST = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+  <line x1="3" y1="20" x2="21" y2="20"/>
+  <rect x="4"  y="14" width="3" height="6"/><rect x="8.5" y="9" width="3" height="11"/>
+  <rect x="13" y="6"  width="3" height="14"/><rect x="17.5" y="12" width="3" height="8"/>
+</svg>"""
+
+ICO_TREE = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+  <rect x="9" y="2.5" width="6" height="4.5" rx="1"/>
+  <rect x="2" y="16.5" width="6" height="4.5" rx="1"/>
+  <rect x="16" y="16.5" width="6" height="4.5" rx="1"/>
+  <path d="M12 7v4.5M5 16.5V12h14v4.5"/>
+</svg>"""
+
+ICO_SHIELD = """<svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 2.5 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6z"/>
+  <path d="M8.8 11.8 11.2 14.4 15.4 9.6"/>
+</svg>"""
+
+MODES = {
+    "mcda": {
+        "title": "Direct-weight MCDA",
+        "sub": "Type importance values in directly. Weighted sum model, "
+               "scores and Jenks-Fisher tiers.",
+        "weights": "quick", "mc": False,
+        "spec": ["Weights: typed", "Robustness: none", "Runtime: instant"],
+        "spec_col": "#2E8B57",
+        "ico": ICO_SLIDERS, "ico_bg": "#E6F1FB", "ico_fg": "#185FA5",
+        "method": "Weighted sum model (WSM) with direct weights",
+        "best": "Fast screening, teaching, or weights that come from an "
+                "external source such as entropy weighting or a client mandate.",
+    },
+    "mcda_mc": {
+        "title": "Direct-weight MCDA + Monte Carlo",
+        "sub": "Same as above, plus a robustness test of weights you are "
+               "not fully confident in.",
+        "weights": "quick", "mc": True,
+        "spec": ["Weights: typed", "Robustness: full suite", "Runtime: + about 1 min"],
+        "spec_col": "#C47A00",
+        "ico": ICO_HIST, "ico_bg": "#E1F5EE", "ico_fg": "#0F6E56",
+        "method": "WSM with direct weights + Gaussian weight perturbation",
+        "best": "You guessed the weights and want to know whether the ranking "
+                "even depends on them.",
+    },
+    "ahp": {
+        "title": "AHP-MCDA",
+        "sub": "Saaty pairwise comparison with the consistency ratio held "
+               "below 0.10, then scores and tiers.",
+        "weights": "expert", "mc": False,
+        "spec": ["Weights: pairwise", "Robustness: none", "Runtime: instant"],
+        "spec_col": "#2E8B57",
+        "ico": ICO_TREE, "ico_bg": "#EEEDFE", "ico_fg": "#534AB7",
+        "method": "AHP (eigenvector weights, CR-verified) + WSM",
+        "best": "Auditable, defensible weights where you do not need an "
+                "uncertainty claim.",
+    },
+    "ahp_mc": {
+        "title": "AHP-MCDA + Monte Carlo",
+        "sub": "The full method. Adds Saaty-scale judgement perturbation, "
+               "convergence and tier stability analysis.",
+        "weights": "expert", "mc": True,
+        "spec": ["Weights: pairwise", "Robustness: full suite", "Runtime: + about 1 min"],
+        "spec_col": "#B22222",
+        "ico": ICO_SHIELD, "ico_bg": "#FAEEDA", "ico_fg": "#854F0B",
+        "method": "AHP (CR-verified) + WSM + Monte Carlo judgement perturbation",
+        "best": "Publication-grade work. This is the method used in the "
+                "Canadian CO\u2082 basin screening study.",
+        "recommended": True,
+    },
+}
+
+def mode_cfg():
+    """Current mode config, defaulting to the full method if none chosen yet."""
+    return MODES.get(S.analysis_mode, MODES["ahp_mc"])
+
+def set_mode(key):
+    """Select an analysis mode. Criteria, alternatives, class definitions and
+    assignments are mode-independent and are preserved. Weights are discarded
+    only when the weight derivation method itself changes."""
+    old = MODES.get(S.analysis_mode)
+    if old is not None and old["weights"] != MODES[key]["weights"]:
+        S.weights = None; S.pairwise_M = None
+        S.raw_weights = {}; S.cr_ok = True
+    S.analysis_mode = key
+    S.weight_mode = MODES[key]["weights"]
+    if not MODES[key]["mc"]:
+        S.ran_mc = False; S.mc_w = None; S.mc_s = None
+        S.sigma = None; S.mu = None; S.stab = None; S.all_sim_tiers = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -613,12 +751,13 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 
 step_labels = [
-    ("1","Criteria"),
-    ("2","Weights"),
-    ("3","Alternatives"),
-    ("4","Class Definitions"),
-    ("5","Assignments"),
-    ("6","Results"),
+    ("1","Analysis Type"),
+    ("2","Criteria"),
+    ("3","Weights"),
+    ("4","Alternatives"),
+    ("5","Class Definitions"),
+    ("6","Assignments"),
+    ("7","Results"),
 ]
 
 bar_html = '<div class="wizard-bar">'
@@ -630,61 +769,216 @@ for i,(num,label) in enumerate(step_labels):
 bar_html += '</div>'
 st.markdown(bar_html, unsafe_allow_html=True)
 
+# Selected-mode chip with a change control (visible from Step 2 onwards)
+if S.step > 1 and S.analysis_mode:
+    ch1, ch2 = st.columns([5,1])
+    with ch1:
+        st.markdown(f'<div class="mode-chip"><span class="dot"></span>'
+                    f'Analysis: {mode_cfg()["title"]}</div>', unsafe_allow_html=True)
+    with ch2:
+        if st.button("Change", key="chg_mode", use_container_width=True,
+                     help="Return to Step 1. Your criteria, alternatives, classes "
+                          "and assignments are kept."):
+            S.step = 1; st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 1 — DEFINE CRITERIA
+# STEP 1 — CHOOSE THE ANALYSIS TYPE
 # ══════════════════════════════════════════════════════════════════════════════
 
 if S.step == 1:
-    st.markdown("## Step 1 — What factors will you evaluate on?")
+    st.markdown("""<div class="mode-head">
+      <h2>Step 1 — Which analysis do you want to run?</h2>
+      <p>Pick how the criterion weights are derived, and whether uncertainty is
+      propagated through the ranking. You can change this at any time without
+      losing your data.</p>
+    </div>""", unsafe_allow_html=True)
+
+    order = ["mcda", "mcda_mc", "ahp", "ahp_mc"]
+    cols = st.columns(4, gap="small")
+
+    for col, key in zip(cols, order):
+        m = MODES[key]
+        with col:
+            badge = ('<div class="mode-badge">Recommended</div>'
+                     if m.get("recommended") else '')
+            spec_html = "".join(
+                f'<div style="color:{m["spec_col"]};">{s}</div>' if i == 2
+                else f'<div>{s}</div>'
+                for i, s in enumerate(m["spec"]))
+            st.markdown(f"""
+            <div class="mode-card{' rec' if m.get('recommended') else ''}">
+              {badge}
+              <div class="mode-ico" style="background:{m['ico_bg']};color:{m['ico_fg']};">
+                {m['ico']}
+              </div>
+              <div class="mode-title">{m['title']}</div>
+              <div class="mode-sub">{m['sub']}</div>
+              <div class="mode-spec">{spec_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            picked = (S.analysis_mode == key)
+            if st.button("Selected ✓" if picked else "Select",
+                         key=f"mode_{key}",
+                         type="primary" if m.get("recommended") else "secondary",
+                         use_container_width=True):
+                set_mode(key)
+                S.step = 2
+                st.rerun()
+
+    st.markdown("""<div class="callout tip">
+    <b>Not sure?</b> Start with <b>AHP-MCDA + Monte Carlo</b>. It is the method used in the
+    Canadian CO₂ basin screening study, and every other mode on this page is a subset of it.
+    </div>""", unsafe_allow_html=True)
+
+    with st.expander("🔍  What actually changes between these four?", expanded=False):
+        st.markdown("""
+The four modes are two independent choices crossed together: **how weights are derived**
+(you type them, or you derive them from pairwise comparisons) and **whether uncertainty
+is propagated** (a single deterministic answer, or a distribution of answers).
+
+Everything else is identical in all four modes. Criteria, alternatives, class definitions,
+class assignments, the weighted sum aggregation, Jenks-Fisher tier classification and the
+GVF quality metric do not change.
+
+| | Deterministic | With Monte Carlo |
+|---|---|---|
+| **Direct weights** | Direct-weight MCDA | Direct-weight MCDA + MC |
+| **AHP pairwise** | AHP-MCDA | AHP-MCDA + MC |
+
+**What the weighting choice changes (Step 3):**
+- *Direct* — you type one number per criterion. Fast, but the weights are an assertion:
+  there is no consistency check and no audit trail behind them.
+- *Pairwise (AHP)* — you compare every pair of criteria on Saaty's 1–9 scale. For 16 criteria
+  that is 120 comparisons, so budget real time for it. In exchange you get eigenvector-derived
+  weights, a Consistency Ratio, and a diagnostic that names your most inconsistent pairs.
+
+**What the Monte Carlo choice changes (Step 7):**
+- *Off* — one set of weights, one ranking, one tier per alternative.
+- *On* — the analysis is re-run thousands of times with slightly perturbed weights.
+  You get weight variability (σᵢ), tier stability percentages against a 99.5% threshold,
+  convergence charts and a weight distribution box plot. The perturbation mechanism differs
+  by weighting method: AHP modes shift individual pairwise judgements one step along the
+  Saaty scale and re-derive weights, which is the defensible construction because it perturbs
+  the judgements you actually made rather than their downstream product. Direct-weight modes
+  instead apply Gaussian noise to each weight, with the standard deviation set by you in
+  Step 7 and recorded in the exports.
+        """)
+
+    if S.criteria or S.alternatives:
+        st.markdown(f"""<div class="callout">
+        Your existing work is still here: <b>{len(S.criteria)} criteria</b>,
+        <b>{len(S.alternatives)} alternatives</b>. Selecting a mode keeps all of it.
+        Weights are only cleared if you switch between direct and pairwise weighting.
+        </div>""", unsafe_allow_html=True)
+        if st.button("Continue without changing the analysis type →"):
+            if S.analysis_mode is None:
+                set_mode("ahp_mc")
+            S.step = 2; st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 2 — DEFINE CRITERIA
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif S.step == 2:
+    st.markdown("## Step 2 — What factors will you evaluate on?")
 
     with st.expander("📖  How to use this app — read before you start", expanded=False):
         st.markdown("""
 **What does this app do?**
 
-This app helps you rank a list of options across multiple factors and tells you how confident
-you can be in those rankings even when you are not 100% certain how important each factor is.
-It implements AHP for weight derivation, Jenks-Fisher for tier classification, and Monte Carlo
-simulation for robustness validation. No programming knowledge needed.
+It ranks a list of options across multiple factors, sorts them into priority tiers, and
+tells you how much confidence those rankings deserve. It implements AHP for weight
+derivation, a weighted sum model for aggregation, Jenks-Fisher natural breaks for tier
+classification, and Monte Carlo simulation for robustness validation. No programming needed.
 
 ---
 
-**Step 1 — Criteria:** List the factors you will evaluate on. These are the properties that matter
-when comparing your options. Example: Storage capacity, Tectonic stability, Infrastructure.
-Minimum 2, recommended 3 to 16.
+**Step 1 — Analysis type:** Choose one of four modes. Two choices are crossed together:
+whether weights are typed in directly or derived from AHP pairwise comparison, and whether
+Monte Carlo uncertainty propagation is run. Everything downstream is identical across modes,
+so you can switch at any time using the **Change** button and keep your data. If in doubt,
+pick *AHP-MCDA + Monte Carlo*.
 
-**Step 2 — Weights:** Tell the app how important each criterion is.
-*Quick Mode* — type a number for each criterion (higher = more important).
-*Expert Mode* — compare every pair using Saaty's 1–9 scale. The app checks consistency
-(Consistency Ratio must be below 0.10).
+**Step 2 — Criteria:** List the factors you will evaluate on. Example: Storage capacity,
+Tectonic stability, Infrastructure. Minimum 2, recommended 3 to 16. Tick *Load Canadian CO₂
+basin example* here to fill the whole app with the published 16-criterion, 13-basin dataset.
 
-**Step 3 — Alternatives:** List the options you want to rank. These do not have to be basins —
-they can be any set of options. Minimum 2.
+**Step 3 — Weights:** How this looks depends on your Step 1 choice.
+*Direct-weight modes* — type a number per criterion, higher meaning more important. They do
+not need to sum to anything; the app rescales them to sum to 1.
+*AHP modes* — compare every pair on Saaty's 1–9 scale. Weights come from the principal
+eigenvector, and the Consistency Ratio must fall below 0.10 to continue. If it does not, the
+app names your three most inconsistent pairs and shows what your other judgements imply each
+one should have been.
 
-**Step 4 — Class definitions:** For each criterion, define 3 to 5 classes from least to most
-favourable. Each class needs a plain English label (e.g. "Very large") and a raw score
-(higher = better, non-linear scores recommended e.g. 1, 3, 7, 15, 21).
-The app normalises all scores to [0, 1] automatically. This is where you encode the
-domain-specific thresholds for each factor.
+**Step 4 — Alternatives:** List the options you want to rank. They do not have to be basins.
+Minimum 2.
 
-**Step 5 — Assignments:** For every combination of alternative and criterion, select the class
-that best describes that alternative's performance. This is where your domain expertise comes in.
-Example: WCSB on Storage capacity → select "Very large". The app looks up the raw score,
-normalises it, and builds the scoring matrix automatically.
+**Step 5 — Class definitions:** For each criterion, define 3 to 5 classes from least to most
+favourable. Each class needs a plain English label (e.g. "Very large") and a raw score, higher
+being better. Non-linear scores such as 1, 3, 7, 15, 21 are recommended: they amplify the gaps
+between classes rather than pretending the steps are evenly spaced. Scores are min-max
+normalised to [0, 1] automatically, so only the relative spacing matters. This is where you
+encode your domain thresholds.
 
-**Step 6 — Results:** The app computes composite scores, classifies options into priority tiers
-using Jenks-Fisher natural breaks, and shows you a ranked chart. Run the Monte Carlo simulation
-to test whether your rankings hold under weight uncertainty, then download everything as CSV,
-PNG, or JSON.
+**Step 6 — Assignments:** For every alternative and criterion, pick the class that describes
+that alternative's performance. Example: WCSB on Storage capacity → "Very large". The app
+looks up the raw score, normalises it, and builds the scoring matrix for you.
+
+**Step 7 — Results:** Everything comes out here.
+
+---
+
+**What you get in Step 7**
+
+*Rankings and tiers (all modes)*
+- Composite score Rᵏ ∈ [0, 1] per alternative, with rank and priority tier.
+- Tier membership cards, colour coded from Tier 1 (priority) to Tier 4 (marginal).
+- Ranked horizontal bar chart with dashed Jenks-Fisher tier boundaries drawn in.
+- GVF (goodness of variance fit), the quality of the tier separation. Above 0.90 is excellent.
+- Tier count k is adjustable from 2 to 6 under *Classification settings*; breaks recompute live.
+
+*Criterion weight breakdown (all modes)*
+- Pareto chart: bars are individual weights, the red line is the cumulative share, with the
+  80% threshold marked. This is how you see which handful of criteria actually drive the result.
+
+*Robustness (Monte Carlo modes only)*
+- Simulation settings: number of simulations N (1,000 to 50,000), perturbation probability,
+  and, in direct-weight mode, the weight uncertainty σ.
+- Weight variability table: your weight, the mean across simulations, σᵢ, and a stability flag.
+- Tier stability table: the percentage of simulations in which each alternative kept its tier,
+  with a Robust or Review verdict against the 99.5% threshold.
+- Convergence charts for the four heaviest criteria. If the curves flatten well before the
+  right edge, N is larger than it needs to be and you can lower it.
+- Weight distribution box plot: IQR box, ±3σ whiskers, and a diamond marking the deterministic
+  weight, so you can see whether perturbation ever moves a weight far from where you put it.
+- Tier stability chart: panel (a) shows all alternatives, panel (b) isolates the five closest
+  to a tier boundary, which are the only ones where instability is likely.
+
+*Downloads*
+- Every chart has its own **PNG** button (150 dpi, white background) and **PPTX** button
+  (the figure placed on a 13.3 × 7.5 inch slide with a title, ready to drop into a talk).
+  PPTX needs python-pptx installed; without it, PNG still works.
+- CSV: scores and tiers, criterion weights, class definitions, class assignments, and, after a
+  simulation, Monte Carlo weight statistics and tier stability results.
+- JSON: the complete run, including the analysis mode, weight derivation method, perturbation
+  mechanism, σ where applicable, iteration count, all class definitions, assignments, scores,
+  tiers and tier breaks. This is the file to archive if you want the run to be reproducible.
 
 ---
 
 **Tips:**
-- Use the ← Back button to return to any previous step at any time.
-- Load the Canadian CO₂ basin example first to understand the full flow before entering your own data.
-- For research use, Expert Mode is recommended as it produces auditable, CR-verified weights.
-- Non-linear class scores (1, 3, 7, 15, 21) amplify differences between classes and are
-  recommended for geoscience applications.
+- Use the ← Back button to return to any previous step at any time. Nothing is lost.
+- Load the Canadian CO₂ basin example first to see the full flow before entering your own data.
+- For research use, an AHP mode is recommended: it produces auditable, CR-verified weights.
+- Run a deterministic mode first to sanity-check your inputs, then switch to the matching
+  Monte Carlo mode from Step 7 once the numbers look right. Simulating a mistake is expensive.
+- If tier stability sits below 99.5% for an alternative, it is not necessarily wrong. It usually
+  means the alternative sits close to a Jenks break, so re-read its class assignments rather
+  than reaching for more simulations.
         """)
 
     st.markdown("""<div class="callout tip">
@@ -727,7 +1021,7 @@ PNG, or JSON.
             # Reset downstream state when criteria change
             S.raw_weights = {}; S.class_defs = {}
             S.assignments = {}; S.weights = None
-            S.step = 2
+            S.step = 3
             st.rerun()
 
     if S.criteria:
@@ -737,20 +1031,32 @@ PNG, or JSON.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — WEIGHTS
+# STEP 3 — WEIGHTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-elif S.step == 2:
-    st.markdown("## Step 2 — How important is each criterion?")
+elif S.step == 3:
+    st.markdown("## Step 3 — How important is each criterion?")
 
     cnames = S.criteria
     n_c = len(cnames)
 
-    mode = st.radio("Choose your weighting method:",
-        ["✏️  Quick Mode — I'll type importance scores directly",
-         "🔬  Expert Mode — Full AHP pairwise comparison (recommended for research)"],
-        key="weight_mode_radio")
-    S.weight_mode = "expert" if "Expert" in mode else "quick"
+    M_CFG = mode_cfg()
+    S.weight_mode = M_CFG["weights"]
+
+    if S.weight_mode == "quick":
+        st.markdown(f"""<div class="callout tip">
+        You chose <b>{M_CFG['title']}</b>, so weights are entered directly.
+        Need Saaty pairwise comparison and a Consistency Ratio instead? Use the
+        <b>Change</b> button above to switch to an AHP mode.
+        </div>""", unsafe_allow_html=True)
+    else:
+        n_pairs_preview = n_c*(n_c-1)//2
+        st.markdown(f"""<div class="callout tip">
+        You chose <b>{M_CFG['title']}</b>, so weights are derived from pairwise
+        comparisons: <b>{n_pairs_preview} comparisons</b> for your {n_c} criteria.
+        Want to just type weights instead? Use the <b>Change</b> button above to
+        switch to a direct-weight mode.
+        </div>""", unsafe_allow_html=True)
 
     if S.weight_mode == "quick":
         st.markdown("""<div class="callout">
@@ -779,13 +1085,13 @@ elif S.step == 2:
                 fwd = st.form_submit_button("Save weights and continue →", type="primary")
 
             if back:
-                S.step = 1; st.rerun()
+                S.step = 2; st.rerun()
             if fwd:
                 raw = np.array(wi)
                 S.raw_weights = {cn: float(raw[i]) for i,cn in enumerate(cnames)}
                 S.weights = raw / raw.sum()
                 S.pairwise_M = None; S.cr_ok = True
-                S.step = 3; st.rerun()
+                S.step = 4; st.rerun()
 
     else:  # Expert mode
         st.markdown("""<div class="callout">
@@ -849,14 +1155,14 @@ elif S.step == 2:
                 with col_a: back=st.form_submit_button("← Back")
                 with col_b: fwd=st.form_submit_button("Save and continue →",type="primary",
                                                        disabled=not cr_ok)
-                if back: S.step=1; st.rerun()
+                if back: S.step=2; st.rerun()
                 if fwd and cr_ok:
                     S.weights=weights_exp; S.pairwise_M=M
-                    S.cr_ok=True; S.step=3; st.rerun()
+                    S.cr_ok=True; S.step=4; st.rerun()
         else:
             st.info(f"You have {n_pairs} pairs — too many for sliders. "
                     "Switch to Quick Mode or reduce the number of criteria.")
-            if st.button("← Back"): S.step=1; st.rerun()
+            if st.button("← Back"): S.step=2; st.rerun()
 
     # Weight preview outside form
     if S.weights is not None and len(S.weights)==n_c:
@@ -893,11 +1199,11 @@ or research context.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 3 — ALTERNATIVES
+# STEP 4 — ALTERNATIVES
 # ══════════════════════════════════════════════════════════════════════════════
 
-elif S.step == 3:
-    st.markdown("## Step 3 — What are you ranking?")
+elif S.step == 4:
+    st.markdown("## Step 4 — What are you ranking?")
     st.markdown("""<div class="callout tip">
     List the <b>alternatives</b> — the options you want to rank and compare.
     These can be basins, sites, countries, suppliers, projects, or anything else.
@@ -920,7 +1226,7 @@ elif S.step == 3:
         with col_a: back=st.form_submit_button("← Back")
         with col_b: fwd=st.form_submit_button("Save alternatives and continue →",type="primary")
 
-        if back: S.step=2; st.rerun()
+        if back: S.step=3; st.rerun()
         if fwd:
             anames=[a.strip() for a in alt_txt.strip().split("\n") if a.strip()]
             if len(anames)<2:
@@ -928,7 +1234,7 @@ elif S.step == 3:
                 st.stop()
             S.alternatives=anames
             S.assignments={}  # reset assignments if alternatives changed
-            S.step=4; st.rerun()
+            S.step=5; st.rerun()
 
     if S.alternatives:
         st.markdown(f"**Currently defined:** {len(S.alternatives)} alternatives")
@@ -938,11 +1244,11 @@ elif S.step == 3:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 4 — CLASS DEFINITIONS
+# STEP 5 — CLASS DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
-elif S.step == 4:
-    st.markdown("## Step 4 — Define the classes for each criterion")
+elif S.step == 5:
+    st.markdown("## Step 5 — Define the classes for each criterion")
     st.markdown("""<div class="callout tip">
     For each criterion, define <b>3 to 5 classes</b> — from least favourable to most favourable.
     Each class needs a <b>label</b> (plain English description) and a <b>raw score</b>
@@ -1052,12 +1358,12 @@ elif S.step == 4:
     st.markdown("---")
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("← Back", key="back_s4"): S.step=3; st.rerun()
+        if st.button("← Back", key="back_s4"): S.step=4; st.rerun()
     with col_b:
         if st.button("Save class definitions and continue →",
                      type="primary", key="fwd_s4", disabled=not all_valid):
             S.class_defs = new_class_defs
-            S.step = 5; st.rerun()
+            S.step = 6; st.rerun()
 
     if not all_valid:
         st.markdown('<div class="callout warn">⚠️ Fix the issues above before continuing.'
@@ -1065,11 +1371,11 @@ elif S.step == 4:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 5 — ASSIGNMENTS
+# STEP 6 — ASSIGNMENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-elif S.step == 5:
-    st.markdown("## Step 5 — Assign a class to each alternative on each criterion")
+elif S.step == 6:
+    st.markdown("## Step 6 — Assign a class to each alternative on each criterion")
     st.markdown("""<div class="callout tip">
     For every combination of alternative and criterion, select the class that best
     describes that alternative's performance. This is where your domain expertise comes in.
@@ -1232,7 +1538,7 @@ elif S.step == 5:
     st.markdown("---")
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("← Back", key="back_s5"): S.step=4; st.rerun()
+        if st.button("← Back", key="back_s5"): S.step=5; st.rerun()
     with col_b:
         if st.button("Calculate results →", type="primary", key="fwd_s5"):
             S.assignments = new_assignments
@@ -1271,15 +1577,15 @@ elif S.step == 5:
             S.P = P; S.scores = alt_scores
             S.tiers = tiers; S.breaks = breaks
             S.ran_mc = False; S.mc_w = None; S.mc_s = None
-            S.step = 6; st.rerun()
+            S.step = 7; st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 6 — RESULTS
+# STEP 7 — RESULTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-elif S.step == 6:
-    st.markdown("## Step 6 — Results")
+elif S.step == 7:
+    st.markdown("## Step 7 — Results")
 
     cnames = S.criteria; anames = S.alternatives
     weights = S.weights; scores = S.scores
@@ -1294,29 +1600,76 @@ elif S.step == 6:
                          3:"Tier 3 - Low priority",4:"Tier 4 - Marginal"}
     tier_css = {1:"result-tier-1",2:"result-tier-2",3:"result-tier-3",4:"result-tier-4"}
 
-    # ── SETTINGS + ROBUSTNESS TEST (all inside expander) ─────────────────────
-    with st.expander("⚙️  Simulation settings & Monte Carlo robustness test", expanded=False):
+    M_CFG = mode_cfg()
+
+    st.markdown(f'<div class="mode-chip"><span class="dot"></span>'
+                f'{M_CFG["title"]} &nbsp;·&nbsp; {M_CFG["method"]}</div>',
+                unsafe_allow_html=True)
+
+    # ── TIER SETTINGS (always available) ──────────────────────────────────────
+    def _tier_control(widget_key):
+        new_k = st.slider("Number of tiers (k)", 2, 6, S.n_tiers, key=widget_key)
+        if new_k != S.n_tiers:
+            S.n_tiers = new_k
+            if n_a >= new_k:
+                breaks_new, _ = jenks(scores, new_k)
+                S.breaks = breaks_new
+                S.tiers = assign_tiers(scores, breaks_new)
+            st.rerun()
+
+    # ── DETERMINISTIC MODES — no Monte Carlo section ──────────────────────────
+    if not M_CFG["mc"]:
+        with st.expander("⚙️  Classification settings", expanded=False):
+            _tier_control("k_det")
+        st.markdown("""<div class="callout tip">
+        <b>This is a deterministic run.</b> One set of weights in, one ranking out.
+        It does not tell you whether the ranking would survive small changes to your
+        weights. To find out, switch to the matching Monte Carlo mode — your criteria,
+        weights, classes and assignments all carry over, so you will land straight
+        back on this page.
+        </div>""", unsafe_allow_html=True)
+        target = "ahp_mc" if M_CFG["weights"] == "expert" else "mcda_mc"
+        if st.button(f"🎲  Add robustness validation ({MODES[target]['title']})",
+                     type="primary", key="upgrade_mc"):
+            set_mode(target); st.rerun()
+
+    # ── SETTINGS + ROBUSTNESS TEST (Monte Carlo modes only) ───────────────────
+    mc_box = (st.expander("⚙️  Simulation settings & Monte Carlo robustness test",
+                          expanded=False)
+              if M_CFG["mc"] else nullcontext())
+    with mc_box:
+      if M_CFG["mc"]:
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             S.n_iter = st.select_slider("Simulations (N)",
                 options=[1000,2000,5000,10000,20000,50000], value=S.n_iter)
         with sc2:
-            S.p_perturb = st.slider("Perturbation probability", .10, .50, S.p_perturb, .05)
+            S.p_perturb = st.slider("Perturbation probability", .10, .50, S.p_perturb, .05,
+                help="Share of judgements (AHP) or weights (direct) disturbed per simulation.")
         with sc3:
-            new_k = st.slider("Number of tiers (k)", 2, 6, S.n_tiers)
-            if new_k != S.n_tiers:
-                S.n_tiers = new_k
-                if n_a >= new_k:
-                    breaks_new, _ = jenks(scores, new_k)
-                    S.breaks = breaks_new
-                    S.tiers = assign_tiers(scores, breaks_new)
-                    tiers = S.tiers; breaks = S.breaks
-                st.rerun()
+            _tier_control("k_mc")
+
+        if S.weight_mode == "quick":
+            S.w_sigma_pct = st.slider("Weight uncertainty σ (% of each weight)",
+                1.0, 20.0, float(S.w_sigma_pct), 0.5,
+                help="Standard deviation of the Gaussian noise applied to each weight, "
+                     "as a percentage of that weight. This is a reportable assumption: "
+                     "it is written into the JSON export.")
+            st.markdown(f"""<div class="callout warn">
+            You are perturbing <b>typed weights</b>, so the app has no pairwise judgements
+            to disturb. Instead each weight is drawn from a normal distribution centred on
+            your value with σ = <b>{S.w_sigma_pct:.1f}%</b> of that weight. This σ is your
+            assumption, not a property of the data — state it in any write-up.
+            </div>""", unsafe_allow_html=True)
 
         st.markdown("---")
+        mech = ("individual pairwise judgements one step along the Saaty scale, "
+                "re-deriving weights from each perturbed matrix"
+                if S.weight_mode == "expert"
+                else f"each weight with Gaussian noise (σ = {S.w_sigma_pct:.1f}% of the weight)")
         st.markdown(f"""<div class="callout">
-        The app will rerun your entire analysis <b>{S.n_iter:,} times</b> with slightly
-        different weights each time, simulating expert judgement uncertainty.
+        The app will rerun your entire analysis <b>{S.n_iter:,} times</b>, each time
+        disturbing {mech}, simulating expert judgement uncertainty.
         If rankings and tier assignments stay stable across those runs, your results
         are <b>robust and trustworthy</b>.
         An alternative is considered <b>robustly classified</b> if it stays in its tier
@@ -1327,7 +1680,7 @@ elif S.step == 6:
 
         if st.button(f"▶  Run {S.n_iter:,} simulations", type="primary"):
             with st.spinner(f"Running {S.n_iter:,} simulations — please wait..."):
-                aw, as_ = run_mc(weights, P, pm, S.n_iter, S.p_perturb)
+                aw, as_ = run_mc(weights, P, pm, S.n_iter, S.p_perturb, S.w_sigma_pct)
                 S.mc_w = aw; S.mc_s = as_; S.ran_mc = True
                 S.sigma = aw.std(axis=0); S.mu = aw.mean(axis=0)
                 # Correctly compute tier stability: for each simulation run,
@@ -1392,9 +1745,11 @@ elif S.step == 6:
             st.pyplot(fig_cv, use_container_width=True)
             fig_download_buttons(fig_cv, "convergence_chart", "Monte Carlo Weight Convergence")
             plt.close(fig_cv)
-            fig_wb = plot_weights_box(aw, weights, cnames)
+            wlab = "AHP" if S.weight_mode == "expert" else "Direct"
+            fig_wb = plot_weights_box(aw, weights, cnames, method_label=wlab)
             st.pyplot(fig_wb, use_container_width=True)
-            fig_download_buttons(fig_wb, "weights_box_plot", "Monte Carlo AHP Weight Distributions")
+            fig_download_buttons(fig_wb, "weights_box_plot",
+                                 f"Monte Carlo {wlab} Weight Distributions")
             plt.close(fig_wb)
             if S.all_sim_tiers is not None:
                 fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
@@ -1506,6 +1861,11 @@ elif S.step == 6:
 
     # Full JSON export
     rd = {
+        'analysis_mode': S.analysis_mode,
+        'analysis_mode_label': M_CFG['title'],
+        'method': M_CFG['method'],
+        'weight_derivation': 'ahp_pairwise' if S.weight_mode=='expert' else 'direct',
+        'monte_carlo': bool(M_CFG['mc'] and S.ran_mc),
         'criteria': cnames, 'alternatives': anames,
         'weights': {c:float(w) for c,w in zip(cnames,weights)},
         'class_definitions': {cn: S.class_defs.get(cn,{}) for cn in cnames},
@@ -1513,9 +1873,14 @@ elif S.step == 6:
         'scores': {a:float(s) for a,s in zip(anames,scores)},
         'tiers': {a:int(t) for a,t in zip(anames,tiers)},
         'tier_breaks': [float(b) for b in breaks],
-        'n_iterations': S.n_iter,
-        'perturbation_probability': S.p_perturb
     }
+    if M_CFG['mc'] and S.ran_mc:
+        rd['n_iterations'] = S.n_iter
+        rd['perturbation_probability'] = S.p_perturb
+        rd['perturbation_mechanism'] = ('saaty_scale_step' if S.weight_mode=='expert'
+                                        else 'gaussian_weight_noise')
+        if S.weight_mode == 'quick':
+            rd['weight_sigma_pct'] = float(S.w_sigma_pct)
     if S.sigma is not None:
         rd['mc_sigma']={c:float(s) for c,s in zip(cnames,S.sigma)}
         rd['mc_stability']={a:float(p) for a,p in zip(anames,S.stab)}
@@ -1526,7 +1891,7 @@ elif S.step == 6:
     st.markdown("---")
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("← Edit assignments (Step 5)"): S.step=5; st.rerun()
+        if st.button("← Edit assignments (Step 6)"): S.step=6; st.rerun()
     with col_b:
         if st.button("🔄  Start over from scratch"):
             for k in list(st.session_state.keys()):
