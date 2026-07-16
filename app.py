@@ -217,7 +217,15 @@ def jenks(values,k):
     idx=n-1; bks=[]
     for cl in range(k-1,0,-1):
         bi=BI[cl,idx]; bks.append(bi); idx=bi-1
-    bv=sv[sorted(bks)]; sdam=np.var(sv)*n
+    bi_sorted=sorted(bks)
+    # Break points are placed at the MIDPOINT between the last member of the
+    # lower class and the first member of the upper class, rather than at the
+    # data value itself. Using the data value puts the class-defining
+    # alternative exactly on the boundary, so any downward perturbation flips
+    # its tier and its Monte Carlo stability collapses to ~50% purely as an
+    # artifact of the convention. Midpoints leave tier assignments unchanged.
+    bv=np.array([(sv[i]+sv[i-1])/2 if i>0 else sv[i] for i in bi_sorted])
+    sdam=np.var(sv)*n
     return bv,1-SSW[k-1,n-1]/sdam if sdam>0 else 1.0
 
 def assign_tiers(scores,breaks):
