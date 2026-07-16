@@ -793,98 +793,6 @@ if S.step == 1:
       losing your data.</p>
     </div>""", unsafe_allow_html=True)
 
-    order = ["mcda", "mcda_mc", "ahp", "ahp_mc"]
-    cols = st.columns(4, gap="small")
-
-    for col, key in zip(cols, order):
-        m = MODES[key]
-        with col:
-            badge = ('<div class="mode-badge">Recommended</div>'
-                     if m.get("recommended") else "")
-            spec_html = "".join(
-                f'<div style="color:{m["spec_col"]};">{t}</div>' if i == 2
-                else f'<div>{t}</div>'
-                for i, t in enumerate(m["spec"]))
-            # Built as one unindented line: any leading whitespace or blank line
-            # would make Streamlit's markdown parser treat this as a code block.
-            st.markdown(
-                f'<div class="mode-card{" rec" if m.get("recommended") else ""}">'
-                f'{badge}'
-                f'<div class="mode-ico" style="background:{m["ico_bg"]};'
-                f'color:{m["ico_fg"]};">{m["ico"]}</div>'
-                f'<div class="mode-title">{m["title"]}</div>'
-                f'<div class="mode-sub">{m["sub"]}</div>'
-                f'<div class="mode-spec">{spec_html}</div>'
-                f'</div>',
-                unsafe_allow_html=True)
-
-            picked = (S.analysis_mode == key)
-            if st.button("Selected ✓" if picked else "Select",
-                         key=f"mode_{key}",
-                         type="primary" if m.get("recommended") else "secondary",
-                         use_container_width=True):
-                set_mode(key)
-                S.step = 2
-                st.rerun()
-
-    st.markdown("""<div class="callout tip">
-    <b>Not sure?</b> Start with <b>AHP-MCDA + Monte Carlo</b>. It is the method used in the
-    Canadian CO₂ basin screening study, and every other mode on this page is a subset of it.
-    </div>""", unsafe_allow_html=True)
-
-    with st.expander("🔍  What actually changes between these four?", expanded=False):
-        st.markdown("""
-The four modes are two independent choices crossed together: **how weights are derived**
-(you type them, or you derive them from pairwise comparisons) and **whether uncertainty
-is propagated** (a single deterministic answer, or a distribution of answers).
-
-Everything else is identical in all four modes. Criteria, alternatives, class definitions,
-class assignments, the weighted sum aggregation, Jenks-Fisher tier classification and the
-GVF quality metric do not change.
-
-| | Deterministic | With Monte Carlo |
-|---|---|---|
-| **Direct weights** | Direct-weight MCDA | Direct-weight MCDA + MC |
-| **AHP pairwise** | AHP-MCDA | AHP-MCDA + MC |
-
-**What the weighting choice changes (Step 3):**
-- *Direct* — you type one number per criterion. Fast, but the weights are an assertion:
-  there is no consistency check and no audit trail behind them.
-- *Pairwise (AHP)* — you compare every pair of criteria on Saaty's 1–9 scale. For 16 criteria
-  that is 120 comparisons, so budget real time for it. In exchange you get eigenvector-derived
-  weights, a Consistency Ratio, and a diagnostic that names your most inconsistent pairs.
-
-**What the Monte Carlo choice changes (Step 7):**
-- *Off* — one set of weights, one ranking, one tier per alternative.
-- *On* — the analysis is re-run thousands of times with slightly perturbed weights.
-  You get weight variability (σᵢ), tier stability percentages against a 99.5% threshold,
-  convergence charts and a weight distribution box plot. The perturbation mechanism differs
-  by weighting method: AHP modes shift individual pairwise judgements one step along the
-  Saaty scale and re-derive weights, which is the defensible construction because it perturbs
-  the judgements you actually made rather than their downstream product. Direct-weight modes
-  instead apply Gaussian noise to each weight, with the standard deviation set by you in
-  Step 7 and recorded in the exports.
-        """)
-
-    if S.criteria or S.alternatives:
-        st.markdown(f"""<div class="callout">
-        Your existing work is still here: <b>{len(S.criteria)} criteria</b>,
-        <b>{len(S.alternatives)} alternatives</b>. Selecting a mode keeps all of it.
-        Weights are only cleared if you switch between direct and pairwise weighting.
-        </div>""", unsafe_allow_html=True)
-        if st.button("Continue without changing the analysis type →"):
-            if S.analysis_mode is None:
-                set_mode("ahp_mc")
-            S.step = 2; st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — DEFINE CRITERIA
-# ══════════════════════════════════════════════════════════════════════════════
-
-elif S.step == 2:
-    st.markdown("## Step 2 — What factors will you evaluate on?")
-
     with st.expander("📖  How to use this app — read before you start", expanded=False):
         st.markdown("""
 **What does this app do?**
@@ -932,41 +840,12 @@ looks up the raw score, normalises it, and builds the scoring matrix for you.
 
 ---
 
-**What you get in Step 7**
-
-*Rankings and tiers (all modes)*
-- Composite score Rᵏ ∈ [0, 1] per alternative, with rank and priority tier.
-- Tier membership cards, colour coded from Tier 1 (priority) to Tier 4 (marginal).
-- Ranked horizontal bar chart with dashed Jenks-Fisher tier boundaries drawn in.
-- GVF (goodness of variance fit), the quality of the tier separation. Above 0.90 is excellent.
-- Tier count k is adjustable from 2 to 6 under *Classification settings*; breaks recompute live.
-
-*Criterion weight breakdown (all modes)*
-- Pareto chart: bars are individual weights, the red line is the cumulative share, with the
-  80% threshold marked. This is how you see which handful of criteria actually drive the result.
-
-*Robustness (Monte Carlo modes only)*
-- Simulation settings: number of simulations N (1,000 to 50,000), perturbation probability,
-  and, in direct-weight mode, the weight uncertainty σ.
-- Weight variability table: your weight, the mean across simulations, σᵢ, and a stability flag.
-- Tier stability table: the percentage of simulations in which each alternative kept its tier,
-  with a Robust or Review verdict against the 99.5% threshold.
-- Convergence charts for the four heaviest criteria. If the curves flatten well before the
-  right edge, N is larger than it needs to be and you can lower it.
-- Weight distribution box plot: IQR box, ±3σ whiskers, and a diamond marking the deterministic
-  weight, so you can see whether perturbation ever moves a weight far from where you put it.
-- Tier stability chart: panel (a) shows all alternatives, panel (b) isolates the five closest
-  to a tier boundary, which are the only ones where instability is likely.
-
-*Downloads*
-- Every chart has its own **PNG** button (150 dpi, white background) and **PPTX** button
-  (the figure placed on a 13.3 × 7.5 inch slide with a title, ready to drop into a talk).
-  PPTX needs python-pptx installed; without it, PNG still works.
-- CSV: scores and tiers, criterion weights, class definitions, class assignments, and, after a
-  simulation, Monte Carlo weight statistics and tier stability results.
-- JSON: the complete run, including the analysis mode, weight derivation method, perturbation
-  mechanism, σ where applicable, iteration count, all class definitions, assignments, scores,
-  tiers and tier breaks. This is the file to archive if you want the run to be reproducible.
+**What you get in Step 7 depends on the mode you picked in Step 1.** Rankings, tiers, the
+GVF metric, the Pareto weight chart and the CSV/JSON/PNG/PPTX exports come out of every mode.
+The Consistency Ratio and its diagnostics only exist in the AHP modes, and the robustness suite
+(weight variability, tier stability, convergence charts, weight box plot) only exists in the
+Monte Carlo modes. The panel below this one breaks down exactly what each of the four modes
+produces.
 
 ---
 
@@ -980,6 +859,173 @@ looks up the raw score, normalises it, and builds the scoring matrix for you.
   means the alternative sits close to a Jenks break, so re-read its class assignments rather
   than reaching for more simulations.
         """)
+
+    order = ["mcda", "mcda_mc", "ahp", "ahp_mc"]
+    cols = st.columns(4, gap="small")
+
+    for col, key in zip(cols, order):
+        m = MODES[key]
+        with col:
+            badge = ('<div class="mode-badge">Recommended</div>'
+                     if m.get("recommended") else "")
+            spec_html = "".join(
+                f'<div style="color:{m["spec_col"]};">{t}</div>' if i == 2
+                else f'<div>{t}</div>'
+                for i, t in enumerate(m["spec"]))
+            # Built as one unindented line: any leading whitespace or blank line
+            # would make Streamlit's markdown parser treat this as a code block.
+            st.markdown(
+                f'<div class="mode-card{" rec" if m.get("recommended") else ""}">'
+                f'{badge}'
+                f'<div class="mode-ico" style="background:{m["ico_bg"]};'
+                f'color:{m["ico_fg"]};">{m["ico"]}</div>'
+                f'<div class="mode-title">{m["title"]}</div>'
+                f'<div class="mode-sub">{m["sub"]}</div>'
+                f'<div class="mode-spec">{spec_html}</div>'
+                f'</div>',
+                unsafe_allow_html=True)
+
+            picked = (S.analysis_mode == key)
+            if st.button("Selected ✓" if picked else "Select",
+                         key=f"mode_{key}",
+                         type="primary" if m.get("recommended") else "secondary",
+                         use_container_width=True):
+                set_mode(key)
+                S.step = 2
+                st.rerun()
+
+    st.markdown("""<div class="callout tip">
+    <b>Not sure?</b> Start with <b>AHP-MCDA + Monte Carlo</b>. It is the method used in the
+    Canadian CO₂ basin screening study, and every other mode on this page is a subset of it.
+    </div>""", unsafe_allow_html=True)
+
+    with st.expander("🔍  What each analysis gives you — read this before choosing",
+                     expanded=False):
+        st.markdown("""
+The four modes are two independent choices crossed together: **how weights are derived**
+(you type them, or you derive them from pairwise comparisons) and **whether uncertainty is
+propagated** (one deterministic answer, or a distribution of answers).
+
+| | Deterministic | With Monte Carlo |
+|---|---|---|
+| **Direct weights** | 1. Direct-weight MCDA | 2. Direct-weight MCDA + MC |
+| **AHP pairwise** | 3. AHP-MCDA | 4. AHP-MCDA + MC |
+
+Everything not listed below is identical in all four modes: criteria, alternatives, class
+definitions, class assignments, the weighted sum aggregation, Jenks-Fisher tier classification
+and the GVF metric. So the mode only changes what you are asked for in Step 3 and what comes
+out in Step 7.
+
+---
+
+### 1. Direct-weight MCDA
+
+**What it does:** you type one importance number per criterion. The app rescales them to sum
+to 1, multiplies them through your normalised class scores, and sorts the result into tiers.
+
+**Results you get:**
+- Composite score Rᵏ ∈ [0, 1] per alternative, with rank and priority tier
+- Tier membership cards and a ranked bar chart with Jenks-Fisher boundaries drawn in
+- GVF classification quality (above 0.90 = excellent separation), tier count k adjustable 2–6
+- Pareto chart of criterion weights with the cumulative 80% line
+- Downloads: both charts as PNG and PPTX; 4 CSVs (scores and tiers, weights, class definitions,
+  assignments); full JSON
+
+**Results you do not get:** any check that your weights are internally consistent, and any
+statement about whether the ranking would change if the weights were slightly different.
+The ranking is exactly as defensible as the numbers you typed.
+
+**Choose it when:** you want a fast screen, you are teaching the method, or the weights are
+already fixed by something outside this app (entropy weighting, a literature value, a client
+mandate).
+
+---
+
+### 2. Direct-weight MCDA + Monte Carlo
+
+**What it does:** everything in mode 1, then re-runs the whole analysis N times, each time
+redrawing every weight from a normal distribution centred on your typed value.
+
+**Results you get:** everything from mode 1, plus:
+- Weight variability table: your weight, mean across simulations, σᵢ, and a stability flag
+- Tier stability table: percentage of simulations in which each alternative kept its tier,
+  with a Robust or Review verdict against the 99.5% threshold
+- Convergence charts for the four heaviest criteria, to show whether N was large enough
+- Weight distribution box plot (IQR, ±3σ whiskers, deterministic weight marked)
+- Tier stability chart: all alternatives, plus a panel isolating the five closest to a boundary
+- 2 extra CSVs and 3 extra chart exports; σ and iteration count recorded in the JSON
+
+**Results you do not get:** a consistency check on the weights. And note the honest limit of
+this mode: the uncertainty being tested is one you specified yourself with the σ slider, so the
+robustness claim is only as good as that assumption. Report the σ you used.
+
+**Choose it when:** you are not confident in the weights you typed and want to know whether
+the ranking even depends on them.
+
+---
+
+### 3. AHP-MCDA
+
+**What it does:** instead of typing weights, you compare every pair of criteria on Saaty's
+1–9 scale (16 criteria = 120 comparisons). Weights are the principal eigenvector of that matrix.
+
+**Results you get:** everything from mode 1, plus:
+- Eigenvector-derived weights rather than asserted ones
+- Consistency Ratio, Consistency Index and λmax, with CR < 0.10 enforced before you can continue
+- An inconsistency diagnostic naming your three worst pairs and what your other judgements
+  imply each one should have been
+
+**Results you do not get:** any robustness or uncertainty analysis. You get one ranking from
+one consistent matrix.
+
+**Choose it when:** you need weights that are auditable and defensible, but you do not need to
+make a claim about uncertainty.
+
+---
+
+### 4. AHP-MCDA + Monte Carlo (recommended)
+
+**What it does:** everything in mode 3, then perturbs the *judgements themselves*: individual
+pairwise entries shift one step along the Saaty scale and the weights are re-derived from each
+perturbed matrix.
+
+**Results you get:** the complete set. Everything in mode 3, plus every robustness output
+listed in mode 2 (weight variability, tier stability against the 99.5% threshold, convergence
+charts, weight box plot, tier stability chart, all exports).
+
+**Why this one is stronger than mode 2:** it perturbs the judgements you actually made rather
+than their downstream product, so the uncertainty being propagated is a real property of how
+you filled the matrix, not a σ you had to invent. This is why it is the defensible construction
+for publication, and it is the method behind the Canadian CO₂ basin screening study.
+
+**Choose it when:** the result has to survive review.
+
+---
+
+**A practical order of operations:** run mode 3 (or 1) first to sanity-check your inputs, then
+switch to mode 4 (or 2) from Step 7 once the numbers look sensible. Simulating a mistake 20,000
+times is expensive and tells you nothing useful.
+        """)
+
+    if S.criteria or S.alternatives:
+        st.markdown(f"""<div class="callout">
+        Your existing work is still here: <b>{len(S.criteria)} criteria</b>,
+        <b>{len(S.alternatives)} alternatives</b>. Selecting a mode keeps all of it.
+        Weights are only cleared if you switch between direct and pairwise weighting.
+        </div>""", unsafe_allow_html=True)
+        if st.button("Continue without changing the analysis type →"):
+            if S.analysis_mode is None:
+                set_mode("ahp_mc")
+            S.step = 2; st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP 2 — DEFINE CRITERIA
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif S.step == 2:
+    st.markdown("## Step 2 — What factors will you evaluate on?")
+
 
     st.markdown("""<div class="callout tip">
     List the <b>criteria</b> — the factors that matter when comparing your options.
