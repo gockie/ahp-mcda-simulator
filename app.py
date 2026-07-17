@@ -651,6 +651,45 @@ ICO_SHIELD = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
               '<path d="M12 2.5 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6z"/>'
               '<path d="M8.8 11.8 11.2 14.4 15.4 9.6"/></svg>')
 
+EXAMPLE_CRITERIA = [
+    "Tectonic stability","Fault and fracture intensity","Evaporites",
+    "Reservoir–seal pairs","Leakage via outcrops","Storage capacity",
+    "Basin size","Reservoir temperature","Hydrogeological confinement",
+    "Depleted reservoir potential","Freshwater constraint",
+    "Industry maturity","Onshore / offshore","Accessibility",
+    "Infrastructure","CO₂ source proximity",
+]
+
+# ── Example judgements for the Canadian CO2 basin screening ──────────────────
+# The JUDGEMENT is the six-band importance hierarchy below. Weights are DERIVED
+# from it by AHP, never the reverse. Band 1 is most important.
+EXAMPLE_BANDS = {
+    "Tectonic stability": 5, "Fault and fracture intensity": 4, "Evaporites": 5,
+    "Reservoir–seal pairs": 3, "Leakage via outcrops": 6, "Storage capacity": 1,
+    "Basin size": 5, "Reservoir temperature": 5, "Hydrogeological confinement": 6,
+    "Depleted reservoir potential": 4, "Freshwater constraint": 6,
+    "Industry maturity": 5, "Onshore / offshore": 5, "Accessibility": 5,
+    "Infrastructure": 4, "CO₂ source proximity": 2,
+}
+# Documented mapping rule: Saaty judgement from band distance.
+BAND_RULE = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 7}
+
+def example_matrix(cnames):
+    """Build the example pairwise matrix from the band hierarchy."""
+    n = len(cnames)
+    M = np.ones((n, n))
+    for i in range(n):
+        for j in range(n):
+            if i == j: continue
+            d = EXAMPLE_BANDS[cnames[j]] - EXAMPLE_BANDS[cnames[i]]
+            M[i, j] = BAND_RULE[abs(d)] if d > 0 else (
+                1/BAND_RULE[abs(d)] if d < 0 else 1)
+    return M
+
+def example_weights():
+    """Weights DERIVED from the example matrix (not hard-coded)."""
+    return compute_ahp(example_matrix(EXAMPLE_CRITERIA))[0]
+
 MODES = {
     "mcda": {
         "title": "Direct-weight MCDA",
@@ -1055,14 +1094,7 @@ elif S.step == 2:
 
         if submitted:
             if load_example:
-                S.criteria = [
-                    "Tectonic stability","Fault and fracture intensity","Evaporites",
-                    "Reservoir–seal pairs","Leakage via outcrops","Storage capacity",
-                    "Basin size","Reservoir temperature","Hydrogeological confinement",
-                    "Depleted reservoir potential","Freshwater constraint",
-                    "Industry maturity","Onshore / offshore","Accessibility",
-                    "Infrastructure","CO₂ source proximity"
-                ]
+                S.criteria = list(EXAMPLE_CRITERIA)
                 S.is_demo = True
             else:
                 cnames = [c.strip() for c in crit_txt.strip().split("\n") if c.strip()]
@@ -1120,8 +1152,8 @@ elif S.step == 3:
 
         with st.form("form_weights_quick"):
             # Pre-fill with example weights if example was loaded
-            example_w = [.041,.071,.041,.092,.022,.221,.041,.041,
-                         .022,.071,.022,.041,.041,.041,.071,.123]
+            example_w = (list(example_weights())
+                         if cnames==EXAMPLE_CRITERIA else [])
             wi = []
             cols = st.columns(min(4, n_c))
             for i, cn in enumerate(cnames):
@@ -1158,8 +1190,8 @@ elif S.step == 3:
         </div>""", unsafe_allow_html=True)
 
         n_pairs = n_c*(n_c-1)//2
-        example_w = np.array([.041,.071,.041,.092,.022,.221,.041,.041,
-                               .022,.071,.022,.041,.041,.041,.071,.123])
+        example_w = (example_weights() if cnames==EXAMPLE_CRITERIA
+                     else np.full(n_c,1.0/n_c))
 
         def ns(v):
             opts=[1/9,1/8,1/7,1/6,1/5,1/4,1/3,1/2,1,2,3,4,5,6,7,8,9]
@@ -1171,9 +1203,8 @@ elif S.step == 3:
                 upper=[]
                 cp=st.columns(min(3,n_pairs))
                 for k_i,((a,b)) in enumerate(pairs):
-                    if len(cnames)==16:
-                        i_=cnames.index(a); j_=cnames.index(b)
-                        dv=float(ns(example_w[i_]/example_w[j_])) if example_w[j_]>0 else 1.
+                    if n_c==16 and cnames==EXAMPLE_CRITERIA:
+                        dv=float(ns(example_matrix(cnames)[cnames.index(a),cnames.index(b)]))
                     else:
                         dv=1.
                     with cp[k_i%len(cp)]:
@@ -1214,9 +1245,72 @@ elif S.step == 3:
                     S.weights=weights_exp; S.pairwise_M=M
                     S.cr_ok=True; S.step=4; st.rerun()
         else:
-            st.info(f"You have {n_pairs} pairs — too many for sliders. "
-                    "Switch to Quick Mode or reduce the number of criteria.")
-            if st.button("← Back"): S.step=2; st.rerun()
+            # Too many pairs for sliders: present the same judgements as a
+            # scrollable, editable table. Not wrapped in a form, so the CR
+            # updates live as each judgement is edited.
+            SAATY=[1/9,1/8,1/7,1/6,1/5,1/4,1/3,1/2,1,2,3,4,5,6,7,8,9]
+            def lbl(x): return f"1/{int(round(1/x))}" if x<1 else str(int(x))
+            L2V={lbl(x):x for x in SAATY}
+            OPTS=[lbl(x) for x in SAATY]
+
+            st.markdown(f"""<div class="callout tip">
+            <b>{n_pairs} comparisons</b> is too many for sliders, so they are laid out as an
+            editable table. Edit the <b>A vs B</b> column only: <b>3</b> means A is moderately
+            more important than B, <b>1/3</b> means B is moderately more important than A.
+            The Consistency Ratio updates as you edit.
+            </div>""", unsafe_allow_html=True)
+
+            pairs=[(cnames[i],cnames[j]) for i in range(n_c) for j in range(i+1,n_c)]
+            defaults=[]
+            if n_c==16 and cnames==EXAMPLE_CRITERIA:
+                EM=example_matrix(cnames)
+                for a,b in pairs:
+                    defaults.append(lbl(ns(EM[cnames.index(a),cnames.index(b)])))
+            else:
+                defaults=["1"]*len(pairs)
+            if n_c==16 and cnames==EXAMPLE_CRITERIA:
+                st.caption("Pre-filled with the published Canadian CO₂ basin screening "
+                           "judgements. Edit any row to explore alternative elicitations.")
+
+            df=pd.DataFrame({"Criterion A":[a for a,_ in pairs],
+                             "Criterion B":[b for _,b in pairs],
+                             "A vs B":defaults})
+            ed_key=f"pair_editor_{n_c}"
+            ed=st.data_editor(df, key=ed_key, hide_index=True, use_container_width=True,
+                height=min(430, 40+35*n_pairs),
+                disabled=["Criterion A","Criterion B"],
+                column_config={"A vs B": st.column_config.SelectboxColumn(
+                    "A vs B", options=OPTS, required=True, width="small",
+                    help="Saaty 1–9 scale. >1 favours A, <1 favours B.")})
+
+            upper=[L2V[v] for v in ed["A vs B"]]
+            M=build_matrix(n_c,upper)
+            weights_exp,lmax,CI,CR=compute_ahp(M)
+            cr_ok=CR<=0.10
+
+            c1,c2,c3=st.columns(3)
+            c1.metric("Consistency Ratio (CR)","✓ "+f"{CR:.4f}" if cr_ok else "✗ "+f"{CR:.4f}")
+            c2.metric("Lambda Max",f"{lmax:.4f}")
+            c3.metric("Consistency Index",f"{CI:.4f}")
+
+            if not cr_ok:
+                st.markdown("""<div class="callout warn">
+                ⚠️ <b>CR > 0.10.</b> Fix these inconsistent pairs first:
+                </div>""", unsafe_allow_html=True)
+                for ri,(ratio,na,nb,actual,ideal) in enumerate(
+                        find_inconsistent_pairs(M,cnames,top_n=3),1):
+                    st.markdown(f"**{ri}.** *{na}* vs *{nb}* — "
+                                f"you said {actual:.2f}, weights suggest {ideal:.2f} "
+                                f"(inconsistency: {ratio:.2f}×)")
+
+            b1,b2,b3=st.columns([1,1,1])
+            if b1.button("← Back", key="mx_back"): S.step=2; st.rerun()
+            if b2.button("↺ Reset judgements", key="mx_reset"):
+                S.pop(ed_key, None); st.rerun()
+            if b3.button("Save and continue →", key="mx_fwd", type="primary",
+                         disabled=not cr_ok):
+                S.weights=weights_exp; S.pairwise_M=M
+                S.cr_ok=True; S.step=4; st.rerun()
 
     # Weight preview outside form
     if S.weights is not None and len(S.weights)==n_c:
@@ -1446,10 +1540,10 @@ elif S.step == 6:
     EXAMPLE_ASSIGNMENTS = {
         "WCSB":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"Bedded","Reservoir–seal pairs":"Excellent",
-            "Leakage via outcrops":"Very low","Storage capacity":"Very large",
+            "Leakage via outcrops":"Low","Storage capacity":"Very large",
             "Basin size":">200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Regional","Depleted reservoir potential":"Very large (>1 Gboe)",
-            "Freshwater constraint":"Limited","Industry maturity":"Very mature",
+            "Freshwater constraint":"Some","Industry maturity":"Very mature",
             "Onshore / offshore":"Onshore","Accessibility":"Easy",
             "Infrastructure":"Extensive","CO₂ source proximity":"<100 km"},
         "Williston Basin":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
