@@ -651,9 +651,12 @@ ICO_SHIELD = ('<svg width="26" height="26" viewBox="0 0 24 24" fill="none" '
               '<path d="M12 2.5 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6z"/>'
               '<path d="M8.8 11.8 11.2 14.4 15.4 9.6"/></svg>')
 
+# 15 suitability criteria. Storage capacity is deliberately NOT among them:
+# it is reported separately for the highest-ranked basins, following the
+# structure of Bachu (2003) and Ye et al. (2023). See Section 2.3.
 EXAMPLE_CRITERIA = [
     "Tectonic stability","Fault and fracture intensity","Evaporites",
-    "Reservoir–seal pairs","Leakage via outcrops","Storage capacity",
+    "Reservoir–seal pairs","Leakage via outcrops",
     "Basin size","Reservoir temperature","Hydrogeological confinement",
     "Depleted reservoir potential","Freshwater constraint",
     "Industry maturity","Onshore / offshore","Accessibility",
@@ -664,12 +667,13 @@ EXAMPLE_CRITERIA = [
 # The JUDGEMENT is the six-band importance hierarchy below. Weights are DERIVED
 # from it by AHP, never the reverse. Band 1 is most important.
 EXAMPLE_BANDS = {
-    "Tectonic stability": 5, "Fault and fracture intensity": 4, "Evaporites": 5,
-    "Reservoir–seal pairs": 3, "Leakage via outcrops": 6, "Storage capacity": 1,
-    "Basin size": 5, "Reservoir temperature": 5, "Hydrogeological confinement": 6,
-    "Depleted reservoir potential": 4, "Freshwater constraint": 6,
-    "Industry maturity": 5, "Onshore / offshore": 5, "Accessibility": 5,
-    "Infrastructure": 4, "CO₂ source proximity": 2,
+    "CO₂ source proximity": 1, "Reservoir–seal pairs": 1,
+    "Reservoir temperature": 2,
+    "Fault and fracture intensity": 3, "Onshore / offshore": 3,
+    "Depleted reservoir potential": 4, "Infrastructure": 4,
+    "Tectonic stability": 4, "Industry maturity": 4,
+    "Hydrogeological confinement": 5, "Basin size": 5, "Accessibility": 5,
+    "Leakage via outcrops": 6, "Freshwater constraint": 6, "Evaporites": 6,
 }
 # Documented mapping rule: Saaty judgement from band distance.
 BAND_RULE = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 7}
@@ -1203,7 +1207,7 @@ elif S.step == 3:
                 upper=[]
                 cp=st.columns(min(3,n_pairs))
                 for k_i,((a,b)) in enumerate(pairs):
-                    if n_c==16 and cnames==EXAMPLE_CRITERIA:
+                    if n_c==15 and cnames==EXAMPLE_CRITERIA:
                         dv=float(ns(example_matrix(cnames)[cnames.index(a),cnames.index(b)]))
                     else:
                         dv=1.
@@ -1262,13 +1266,13 @@ elif S.step == 3:
 
             pairs=[(cnames[i],cnames[j]) for i in range(n_c) for j in range(i+1,n_c)]
             defaults=[]
-            if n_c==16 and cnames==EXAMPLE_CRITERIA:
+            if n_c==15 and cnames==EXAMPLE_CRITERIA:
                 EM=example_matrix(cnames)
                 for a,b in pairs:
                     defaults.append(lbl(ns(EM[cnames.index(a),cnames.index(b)])))
             else:
                 defaults=["1"]*len(pairs)
-            if n_c==16 and cnames==EXAMPLE_CRITERIA:
+            if n_c==15 and cnames==EXAMPLE_CRITERIA:
                 st.caption("Pre-filled with the published Canadian CO₂ basin screening "
                            "judgements. Edit any row to explore alternative elicitations.")
 
@@ -1421,7 +1425,6 @@ elif S.step == 5:
         "Evaporites":               {"n":3,"labels":["None","Domes","Bedded"],"scores":[1,2,3]},
         "Reservoir–seal pairs":     {"n":5,"labels":["None","Poor","Intermediate","Good","Excellent"],"scores":[1,3,7,15,21]},
         "Leakage via outcrops":     {"n":5,"labels":["Very high","High","Intermediate","Low","Very low"],"scores":[1,3,5,7,9]},
-        "Storage capacity":         {"n":5,"labels":["Negligible","Small","Medium","Large","Very large"],"scores":[1,3,7,15,21]},
         "Basin size":               {"n":5,"labels":["<600 km²","<1,000 km²","<2,000 km²","<200,000 km²",">200,000 km²"],"scores":[1,3,7,15,21]},
         "Reservoir temperature":    {"n":4,"labels":["<40°C","40–70°C","70–100°C",">100°C"],"scores":[1,3,7,15]},
         "Hydrogeological confinement":{"n":3,"labels":["Local","Intermediate","Regional"],"scores":[1,3,5]},
@@ -1540,7 +1543,7 @@ elif S.step == 6:
     EXAMPLE_ASSIGNMENTS = {
         "WCSB":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"Bedded","Reservoir–seal pairs":"Excellent",
-            "Leakage via outcrops":"Low","Storage capacity":"Very large",
+            "Leakage via outcrops":"Low",
             "Basin size":">200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Regional","Depleted reservoir potential":"Very large (>1 Gboe)",
             "Freshwater constraint":"Some","Industry maturity":"Very mature",
@@ -1548,7 +1551,7 @@ elif S.step == 6:
             "Infrastructure":"Extensive","CO₂ source proximity":"<100 km"},
         "Williston Basin":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"Bedded","Reservoir–seal pairs":"Good",
-            "Leakage via outcrops":"Low","Storage capacity":"Large",
+            "Leakage via outcrops":"Low",
             "Basin size":">200,000 km²","Reservoir temperature":"70–100°C",
             "Hydrogeological confinement":"Regional","Depleted reservoir potential":"Large (500 Mboe–1 Gboe)",
             "Freshwater constraint":"Limited","Industry maturity":"Mature",
@@ -1556,7 +1559,7 @@ elif S.step == 6:
             "Infrastructure":"Extensive","CO₂ source proximity":"<200 km"},
         "Michigan Basin":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"Bedded","Reservoir–seal pairs":"Good",
-            "Leakage via outcrops":"Low","Storage capacity":"Medium",
+            "Leakage via outcrops":"Low",
             "Basin size":"<200,000 km²","Reservoir temperature":"40–70°C",
             "Hydrogeological confinement":"Regional","Depleted reservoir potential":"Large (500 Mboe–1 Gboe)",
             "Freshwater constraint":"Some","Industry maturity":"Mature",
@@ -1564,7 +1567,7 @@ elif S.step == 6:
             "Infrastructure":"Extensive","CO₂ source proximity":"<100 km"},
         "NL Offshore":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Good",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Large",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":"<200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Large (500 Mboe–1 Gboe)",
             "Freshwater constraint":"Abundant","Industry maturity":"Mature",
@@ -1572,7 +1575,7 @@ elif S.step == 6:
             "Infrastructure":"Moderate","CO₂ source proximity":"Moderate"},
         "Scotian Basin":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Good",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Large",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":"<200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Moderate (50–500 Mboe)",
             "Freshwater constraint":"Abundant","Industry maturity":"Mature",
@@ -1580,7 +1583,7 @@ elif S.step == 6:
             "Infrastructure":"Moderate","CO₂ source proximity":"Minor"},
         "Flemish Pass":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Good",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Large",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":"<200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Minor (<50 Mboe)",
             "Freshwater constraint":"Abundant","Industry maturity":"Developing",
@@ -1588,7 +1591,7 @@ elif S.step == 6:
             "Infrastructure":"Minor","CO₂ source proximity":"Minor"},
         "Beaufort-Mackenzie":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Intermediate",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Large",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":">200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Minor (<50 Mboe)",
             "Freshwater constraint":"Some","Industry maturity":"Developing",
@@ -1596,7 +1599,7 @@ elif S.step == 6:
             "Infrastructure":"Minor","CO₂ source proximity":"Minor"},
         "Hudson Bay":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"None","Reservoir–seal pairs":"Intermediate",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Large",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":">200,000 km²","Reservoir temperature":"40–70°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
             "Freshwater constraint":"All fresh","Industry maturity":"Unexplored",
@@ -1604,7 +1607,7 @@ elif S.step == 6:
             "Infrastructure":"None","CO₂ source proximity":"None (>200 km)"},
         "St. Lawrence":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"Domes","Reservoir–seal pairs":"Intermediate",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Small",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":"<2,000 km²","Reservoir temperature":"40–70°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Moderate (50–500 Mboe)",
             "Freshwater constraint":"All fresh","Industry maturity":"Developing",
@@ -1612,7 +1615,7 @@ elif S.step == 6:
             "Infrastructure":"Moderate","CO₂ source proximity":"<200 km"},
         "Nova Scotia":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Intermediate",
-            "Leakage via outcrops":"High","Storage capacity":"Small",
+            "Leakage via outcrops":"High",
             "Basin size":"<1,000 km²","Reservoir temperature":"<40°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"Minor (<50 Mboe)",
             "Freshwater constraint":"Some","Industry maturity":"Developing",
@@ -1620,7 +1623,7 @@ elif S.step == 6:
             "Infrastructure":"Moderate","CO₂ source proximity":"Moderate"},
         "Arctic Islands":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"None","Reservoir–seal pairs":"Poor",
-            "Leakage via outcrops":"Intermediate","Storage capacity":"Medium",
+            "Leakage via outcrops":"Intermediate",
             "Basin size":"<200,000 km²","Reservoir temperature":"<40°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
             "Freshwater constraint":"All fresh","Industry maturity":"Unexplored",
@@ -1628,7 +1631,7 @@ elif S.step == 6:
             "Infrastructure":"None","CO₂ source proximity":"None (>200 km)"},
         "New Brunswick":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Poor",
-            "Leakage via outcrops":"High","Storage capacity":"Small",
+            "Leakage via outcrops":"High",
             "Basin size":"<600 km²","Reservoir temperature":"<40°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
             "Freshwater constraint":"All fresh","Industry maturity":"Exploring",
@@ -1636,7 +1639,7 @@ elif S.step == 6:
             "Infrastructure":"Minor","CO₂ source proximity":"Minor"},
         "Pacific Margin":{"Tectonic stability":">200 cm/s²","Fault and fracture intensity":"High",
             "Evaporites":"None","Reservoir–seal pairs":"Poor",
-            "Leakage via outcrops":"Very high","Storage capacity":"Small",
+            "Leakage via outcrops":"Very high",
             "Basin size":"<1,000 km²","Reservoir temperature":"70–100°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
             "Freshwater constraint":"Abundant","Industry maturity":"Exploring",
