@@ -675,6 +675,12 @@ EXAMPLE_BANDS = {
     "Hydrogeological confinement": 5, "Basin size": 5, "Accessibility": 5,
     "Leakage via outcrops": 6, "Freshwater constraint": 6, "Evaporites": 6,
 }
+EXAMPLE_ALTS = [
+    "WCSB","Williston Basin","Michigan Basin","NL Offshore","Scotian Basin",
+    "Flemish Pass","Beaufort-Mackenzie","Hudson Bay","St. Lawrence",
+    "Nova Scotia","Arctic Islands","New Brunswick","Pacific Margin",
+]
+
 # Documented mapping rule: Saaty judgement from band distance.
 BAND_RULE = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 7}
 
@@ -1163,7 +1169,7 @@ elif S.step == 3:
             for i, cn in enumerate(cnames):
                 with cols[i % len(cols)]:
                     default_val = float(example_w[i]) if (
-                        len(cnames)==16 and i<len(example_w)) else round(1/n_c, 4)
+                        cnames==EXAMPLE_CRITERIA and i<len(example_w)) else round(1/n_c, 4)
                     wi.append(st.number_input(cn[:30], min_value=0.001,
                         max_value=100., value=default_val,
                         step=0.001, format="%.4f", key=f"wq_{i}"))
@@ -1207,7 +1213,7 @@ elif S.step == 3:
                 upper=[]
                 cp=st.columns(min(3,n_pairs))
                 for k_i,((a,b)) in enumerate(pairs):
-                    if n_c==15 and cnames==EXAMPLE_CRITERIA:
+                    if cnames==EXAMPLE_CRITERIA:
                         dv=float(ns(example_matrix(cnames)[cnames.index(a),cnames.index(b)]))
                     else:
                         dv=1.
@@ -1266,13 +1272,13 @@ elif S.step == 3:
 
             pairs=[(cnames[i],cnames[j]) for i in range(n_c) for j in range(i+1,n_c)]
             defaults=[]
-            if n_c==15 and cnames==EXAMPLE_CRITERIA:
+            if cnames==EXAMPLE_CRITERIA:
                 EM=example_matrix(cnames)
                 for a,b in pairs:
                     defaults.append(lbl(ns(EM[cnames.index(a),cnames.index(b)])))
             else:
                 defaults=["1"]*len(pairs)
-            if n_c==15 and cnames==EXAMPLE_CRITERIA:
+            if cnames==EXAMPLE_CRITERIA:
                 st.caption("Pre-filled with the published Canadian CO₂ basin screening "
                            "judgements. Edit any row to explore alternative elicitations.")
 
@@ -1327,23 +1333,44 @@ elif S.step == 3:
 
     # Literature reference box for demo data
     if S.is_demo:
-        with st.expander("📚  Literature sources for the example weights", expanded=False):
+        with st.expander("📚  How the example weights were derived, and from what", expanded=False):
             st.markdown("""
-The default example weights follow the criterion importance hierarchy established in the
-CO₂ storage screening literature, specifically storage capacity as the dominant criterion,
-CO₂ source proximity as the primary economic feasibility driver, and reservoir-seal quality
-as the principal containment criterion:
+The example weights are DERIVED, by AHP, from the six-band criterion importance
+hierarchy in `EXAMPLE_BANDS`. The bands are the judgement; the weights are the output.
+Band placement is grounded in the four studies that publish criterion weights for CO₂
+storage screening:
+
+- **Band 1 — CO₂ source proximity and reservoir–seal pairs.** Source proximity is the only
+  criterion placed in the top three by both national-scale studies (Bachu 2003, w = 0.09,
+  3rd of 15; Ye et al. 2023, w = 0.12, highest of 16). Reservoir–seal quality is the
+  highest-weighted containment criterion in Ye et al. (w = 0.10), and the caprock cluster is
+  the largest in Ma et al. (2025) at w = 0.236: containment failure, not injectivity or
+  capacity, is the principal threat to permanence.
+- **Band 2 — reservoir temperature.** Bachu assigns the geothermal regime w = 0.10, joint
+  highest of 15, grounded in a physical argument about CO₂ density and buoyancy;
+  Ye et al. independently assign w = 0.08.
+- **Bands 3 to 6** follow the same four sources. Freshwater constraint is the sole criterion
+  with no published weight anywhere and is placed by the authors' judgement.
+
+Storage capacity is deliberately NOT a ranking criterion. Bachu excluded it because the data
+burden exceeded screening scale, and Ye et al. keep the same separation, ranking on
+suitability and quantifying capacity only for the basins that rank well. Published
+basin-scale capacity exists for only 4 of the 13 Canadian basins, so scoring the other 9
+would mean inventing values.
 
 - Bachu, S. (2003). Screening and ranking of sedimentary basins for sequestration of CO₂
   in geological media in response to climate change. *Environmental Geology*, 44(3), 277–289.
   https://doi.org/10.1007/s00254-003-0762-9
-- Metz, B., Davidson, O., de Coninck, H., Loos, M., & Meyer, L. (Eds.) (2005).
-  *IPCC Special Report on Carbon Dioxide Capture and Storage*. Cambridge University Press.
+- Ye, J., et al. (2023). Evaluation of geological CO₂ storage potential in Saudi Arabian
+  sedimentary basins. *Earth-Science Reviews*, 244, 104539.
+  https://doi.org/10.1016/j.earscirev.2023.104539
+- Wei, N., et al. (2013). A preliminary sub-basin scale evaluation framework of site
+  suitability for onshore aquifer-based CO₂ storage in China. *IJGGC*, 12, 231–246.
+- Ma, Y., et al. (2025). Evaluation of suitability of CO₂ geologic storage in deep saline
+  aquifers in Lindian area of Songliao Basin. *Hydrogeology & Engineering Geology*, 52(1), 238–248.
+- Metz, B., et al. (Eds.) (2005). *IPCC Special Report on Carbon Dioxide Capture and Storage.*
 - Celia, M.A., Bachu, S., Nordbotten, J.M., & Bandilla, K.W. (2015). Status of CO₂ storage
-  in deep saline aquifers with emphasis on modeling approaches and practical simulations.
-  *Water Resources Research*, 51(9), 6846–6892. https://doi.org/10.1002/2015WR017609
-- Middleton, R.S., & Bielicki, J.M. (2009). A scalable infrastructure model for carbon
-  capture and storage: SimCCS. *Energy Policy*, 37(3), 1052–1060.
+  in deep saline aquifers. *Water Resources Research*, 51(9), 6846–6892.
 
 These weights are a starting reference only — adjust them to reflect your own judgement
 or research context.
@@ -1367,10 +1394,8 @@ elif S.step == 4:
         st.markdown("**Enter your alternatives — one per line (minimum 2):**")
         default_alts = "\n".join(S.alternatives) if S.alternatives else (
             "Option A\nOption B\nOption C\nOption D")
-        if len(S.criteria)==16 and not S.alternatives:
-            default_alts=("WCSB\nWilliston Basin\nMichigan Basin\nNL Offshore\n"
-                          "Scotian Basin\nFlemish Pass\nBeaufort-Mackenzie\nHudson Bay\n"
-                          "St. Lawrence\nNova Scotia\nArctic Islands\nNew Brunswick\nPacific Margin")
+        if S.criteria == EXAMPLE_CRITERIA and not S.alternatives:
+            default_alts = "\n".join(EXAMPLE_ALTS)
 
         alt_txt=st.text_area("Alternatives",value=default_alts,
                              height=220,label_visibility="collapsed")
