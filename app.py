@@ -539,44 +539,48 @@ def plot_stress(labels, K, anames, tiers, n_iter):
 
 
 def plot_score_box(all_sim_scores, anames, scores, tiers, breaks, n_iter):
-    """Simulated score range of every alternative against the tier boundaries."""
-    TC = {1:'#2E8B57', 2:'#C47A00', 3:'#8B4500', 4:'#777777'}
+    """Composite score distributions against the tier boundaries.
+
+    Deterministic score as a marker, the full Monte Carlo range as a bar.
+    This is the figure that shows WHY tiers are stable: if no bar reaches a
+    dashed boundary, no alternative can change tier.
+    """
+    TC = {1:'#2E8B57', 2:'#F0B860', 3:'#E8734A', 4:'#9E9E9E'}
     TN = {1:'Tier 1 — Priority', 2:'Tier 2 — Secondary',
-          3:'Tier 3 — Low priority', 4:'Tier 4 — Marginal'}
-    order = np.argsort(scores)
+          3:'Tier 3 — Low Priority', 4:'Tier 4 — Marginal'}
+    order = np.argsort(scores)[::-1]          # best at the top
     n_a = len(anames)
-    fig, ax = plt.subplots(figsize=(10, max(4.2, n_a*0.46 + 1.6)), facecolor='white')
-    ax.set_facecolor('#FAFBFC')
+    fig, ax = plt.subplots(figsize=(10, max(4.0, n_a*0.42 + 1.4)), facecolor='white')
+    ax.set_facecolor('#FAFAFA')
+    y = np.arange(n_a)[::-1]
+
     for k, b in enumerate(breaks):
-        ax.axvline(b, color='#B22222', ls='--', lw=1.4, zorder=1,
+        ax.axvline(b, color='#555', ls='--', lw=1.0, zorder=1,
                    label='Tier boundary' if k == 0 else None)
-    bp = ax.boxplot([all_sim_scores[:, i] for i in order], vert=False, widths=0.62,
-                    patch_artist=True, whis=(0, 100),
-                    medianprops=dict(color='white', lw=1.6),
-                    flierprops=dict(marker='', ms=0), zorder=3)
-    for patch, i in zip(bp['boxes'], order):
-        patch.set_facecolor(TC[tiers[i]]); patch.set_alpha(0.92)
-        patch.set_edgecolor('#333'); patch.set_linewidth(0.7)
-    for el in ('whiskers', 'caps'):
-        for ln in bp[el]: ln.set_color('#555'); ln.set_linewidth(1.0)
-    ax.set_yticks(range(1, n_a+1))
+        hi = len(breaks) - k        # breaks are ascending: b[0] = T3|T4 ... b[-1] = T1|T2
+        ax.text(b, -0.9, f"T{hi} | T{hi+1}", fontsize=7, color='#555',
+                ha='center', va='top')
+
+    lo = all_sim_scores.min(axis=0); up = all_sim_scores.max(axis=0)
+    for row, i in enumerate(order):
+        yy = y[row]
+        ax.barh(yy, up[i]-lo[i], left=lo[i], height=0.55, color=TC[tiers[i]],
+                alpha=0.55, edgecolor=TC[tiers[i]], lw=0.8, zorder=3)
+        ax.plot(scores[i], yy, 'o', color='#222', ms=5, zorder=5)
+    ax.set_yticks(y[::-1][::-1]); ax.set_yticks(y)
     ax.set_yticklabels([anames[i] for i in order], fontsize=9)
-    for y, i in enumerate(order, 1):
-        d = min(abs(scores[i]-b) for b in breaks)
-        half = (all_sim_scores[:, i].max() - all_sim_scores[:, i].min())/2
-        if half > 0:
-            ax.text(all_sim_scores[:, i].max()+0.012, y, f"margin {d/half:.1f}×",
-                    va='center', fontsize=7, color='#666')
-    ax.set_xlabel(f'Composite score $R^k$ across {n_iter:,} perturbed simulations', fontsize=10)
-    ax.set_title('Monte Carlo sensitivity: simulated score range against the tier boundaries',
-                 fontsize=11.5, fontweight='bold', pad=12)
-    ax.set_xlim(-0.02, 1.10); ax.grid(axis='x', alpha=0.25, zorder=0)
-    h = [Patch(facecolor=TC[k], label=TN[k]) for k in sorted(set(tiers))]
-    h.append(plt.Line2D([0], [0], color='#B22222', ls='--', lw=1.4, label='Tier boundary'))
-    ax.legend(handles=h, loc='lower right', fontsize=8, framealpha=0.95)
+    ax.set_xlabel('Composite suitability score  $R^k \\in [0, 1]$', fontsize=10)
+    ax.set_xlim(max(0, lo.min()-0.08), min(1.06, up.max()+0.06))
+    ax.set_ylim(-1.4, n_a-0.4)
+    ax.grid(axis='x', alpha=0.25, zorder=0)
+    h = [Patch(facecolor=TC[k], alpha=0.55, label=TN[k]) for k in sorted(set(tiers))]
+    h.append(plt.Line2D([0],[0], marker='o', color='w', markerfacecolor='#222',
+                        markersize=5, label='Deterministic score'))
+    h.append(Patch(facecolor='#BBB', alpha=0.55, label=f'Bar = full MC range (n = {n_iter:,})'))
+    h.append(plt.Line2D([0],[0], color='#555', ls='--', lw=1.0, label='Tier boundary'))
+    ax.legend(handles=h, loc='lower right', fontsize=7.5, framealpha=0.95, ncol=2)
     plt.tight_layout()
     return fig
-
 
 def init_state():
     defaults = dict(
@@ -1920,6 +1924,12 @@ elif S.step == 7:
             fig_download_buttons(fig_wb, "weights_box_plot",
                                  f"Monte Carlo {wlab} Weight Distributions")
             plt.close(fig_wb)
+            if S.mc_s is not None:
+                fig_sb = plot_score_box(S.mc_s, anames, scores, tiers, breaks, S.n_iter)
+                st.pyplot(fig_sb, use_container_width=True)
+                fig_download_buttons(fig_sb, "score_distributions",
+                                     "Composite Score Distributions vs Tier Boundaries")
+                plt.close(fig_sb)
         else:
             st.info("Run a simulation above to see robustness results and convergence charts here.")
 
