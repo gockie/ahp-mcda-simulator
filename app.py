@@ -170,6 +170,8 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;color:var(--text);}
 # CORE MATH
 # ══════════════════════════════════════════════════════════════════════════════
 
+SAATY_SCALE = np.array([1/9,1/8,1/7,1/6,1/5,1/4,1/3,1/2,1,2,3,4,5,6,7,8,9])
+
 SAATY_RI = {1:0,2:0,3:.58,4:.90,5:1.12,6:1.24,7:1.32,8:1.41,
             9:1.45,10:1.49,11:1.51,12:1.54,13:1.56,14:1.57,
             15:1.58,16:1.59,17:1.60,18:1.61,19:1.62,20:1.63}
@@ -469,121 +471,112 @@ def plot_weights_box(aw, w_det, names, method_label='AHP'):
     return fig
 
 
-def plot_stability(all_sim_tiers, names, det_tiers, breaks, n_iter):
-    # all_sim_tiers: pre-computed (n_iter, n_alternatives) array from session state
-    # ensures chart and table use identical tier assignments
+def run_stress(weights, P, pairwise_M, breaks, tiers_det, n_iter=2000, p_perturb=0.30):
+    """Stress test: how far can the judgements be pushed before a tier changes?
 
-    cps = np.unique(np.concatenate([
-        np.arange(100, min(1000, n_iter), 100),
-        np.arange(1000, n_iter + 1, max(200, n_iter // 50))])).astype(int)
-    cps = cps[cps <= n_iter]
-
-    ref_pts = [p for p in [1000, 3000, 5000, 10000, 15000, 20000] if p <= n_iter]
-
-    # Identify 5 boundary-proximate basins by finding those with lowest
-    # mean tier stability (closest to changing tier)
-    stab_final = np.array([(all_sim_tiers[:, b] == det_tiers[b]).mean()
-                            for b in range(len(names))])
-    boundary_idx = np.argsort(stab_final)[:5]
-
-    styles = ['-','--','-.',':', (0,(3,1,1,1)),'-','--','-.',':',(0,(3,1,1,1)),
-              '-','--','-.',':', (0,(3,1,1,1)),'-','--','-.']
-    # Bold distinct colors — 13 max, all fully saturated
-    BOLD_COLORS = [
-        '#1B3A5C', '#E07030', '#2E8B57', '#C0392B', '#7B2D8B',
-        '#0E7C7B', '#8B6914', '#2E4A8B', '#C2185B', '#4A7C59',
-        '#5B3A8B', '#8B2E2E', '#2E7A8B'
-    ]
-    alt_colors = [BOLD_COLORS[i % len(BOLD_COLORS)] for i in range(len(names))]
-
-    # ── Pre-compute all stability values to set y-axis BEFORE plotting ────────
-    stab_all = []
-    stab_curves = []
-    for b in range(len(names)):
-        curve = [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100 for cp in cps]
-        stab_curves.append(curve)
-        stab_all.extend(curve)
-
-    stab_sub = []
-    stab_sub_curves = []
-    for b in boundary_idx:
-        curve = [(all_sim_tiers[:cp, b] == det_tiers[b]).mean() * 100 for cp in cps]
-        stab_sub_curves.append(curve)
-        stab_sub.extend(curve)
-
-    def get_ylim(vals):
-        if not vals:
-            return (80, 100.8)
-        g = min(vals)
-        r = max(vals) - g   # actual range of data
-        pad = max(r * 0.3, 0.1)   # at least 0.1% padding above/below
-        y_lo = max(0, g - pad)
-        y_hi = min(101, max(vals) + pad)
-        # Snap lower bound to nearest "nice" value
-        if y_lo >= 99.5:   y_lo = 99.0
-        elif y_lo >= 98.0: y_lo = 97.5
-        elif y_lo >= 95.0: y_lo = 94.0
-        elif y_lo >= 90.0: y_lo = 89.0
-        else:              y_lo = max(0, round(y_lo - 2))
-        return (y_lo, y_hi)
-
-    y1 = get_ylim(stab_all)
-    y2 = get_ylim(stab_sub)
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5), facecolor='white')
-    fig.suptitle('Monte Carlo Sensitivity Test — Tier Assignment Stability',
-                 fontsize=12, fontweight='bold', color='black', fontfamily=FONT)
-
-    def draw_panel(ax, curves, basin_indices, ylims, title):
-        ax.set_facecolor('#F9FAFB')
-        ax.set_ylim(*ylims)
-        n_shown = len(basin_indices)
-
-        # Vertical reference lines
-        for rp in ref_pts:
-            ax.axvline(rp, color='#CCCCCC', lw=0.8, ls=':', zorder=2)
-            ax.text(rp, ylims[1] - (ylims[1]-ylims[0])*0.03,
-                    f'N={rp:,}', fontsize=7, color='black',
-                    fontweight='bold', ha='center', va='top', rotation=90)
-
-        # Stability lines
-        for i, (b, curve) in enumerate(zip(basin_indices, curves)):
-            ax.plot(cps, curve, color=alt_colors[b], lw=2.0,
-                    ls=styles[i % len(styles)], alpha=1.0, label=names[b])
-
-        ax.axhline(99.5, color=RED, lw=2.0, ls='--',
-                   label='99.5% threshold', zorder=5)
-
-        ax.set_xlabel('Simulations run', fontsize=10, fontfamily=FONT,
-                      color='black', fontweight='bold')
-        ax.set_ylabel('% simulations where tier stays the same',
-                      fontsize=10, fontfamily=FONT, color='black', fontweight='bold')
-        ax.set_title(title, fontsize=11, fontweight='bold',
-                     color='black', fontfamily=FONT)
-        ax.grid(True, color='#E0E0E0', lw=0.5, zorder=0)
-        ax.tick_params(labelsize=9, colors='black', labelcolor='black')
-        for spine in ax.spines.values():
-            spine.set_edgecolor('black')
-
-        # Legend: single column for panel b (5 items), two columns for panel a
-        leg_ncol = 2 if n_shown > 6 else 1
-        leg = ax.legend(fontsize=7.5, framealpha=0.95, ncol=leg_ncol,
-                        loc='lower right', edgecolor='black')
-        for text in leg.get_texts():
-            text.set_color('black')
-            text.set_fontweight('bold')
-
-    draw_panel(ax1, stab_curves, list(range(len(names))), y1,
-               f'(a) All {len(names)} alternatives')
-    draw_panel(ax2, stab_sub_curves, list(boundary_idx), y2,
-               '(b) Five boundary-proximate alternatives')
-
-    plt.tight_layout(rect=[0, 0, 1, .93]); return fig
+    Re-runs the analysis at increasing perturbation magnitude and returns the
+    percentage of simulations in which each alternative retains its deterministic
+    tier. Unlike stability-versus-N (which is flat once converged), this varies,
+    so it shows where the classification actually breaks.
+    Returns (labels, K) with K of shape (n_levels, n_alternatives).
+    """
+    if pairwise_M is None:
+        return [], np.zeros((0, P.shape[0]))
+    LEVELS = [(1, p_perturb, f"±1 step\np = {p_perturb:.2f}\n(adopted)"),
+              (1, 0.60, "±1 step\np = 0.60"),
+              (1, 1.00, "±1 step\np = 1.00\n(all judgements)"),
+              (2, 1.00, "±2 steps\np = 1.00"),
+              (3, 1.00, "±3 steps\np = 1.00"),
+              (4, 1.00, "±4 steps\np = 1.00")]
+    n_c = len(weights); n_a = P.shape[0]
+    K = np.zeros((len(LEVELS), n_a)); labels = []
+    for li, (step, p, lab) in enumerate(LEVELS):
+        labels.append(lab)
+        rng = np.random.default_rng(42)
+        keep = np.zeros(n_a)
+        for _ in range(n_iter):
+            Mp = pairwise_M.copy()
+            for i in range(n_c):
+                for j in range(i+1, n_c):
+                    if rng.random() < p:
+                        idx = int(np.argmin(np.abs(SAATY_SCALE - Mp[i, j])))
+                        idx = int(np.clip(idx + rng.choice([-step, step]), 0, 16))
+                        Mp[i, j] = SAATY_SCALE[idx]; Mp[j, i] = 1/SAATY_SCALE[idx]
+            wv, _, _, _ = compute_ahp(Mp)
+            keep += (assign_tiers(P @ wv, breaks) == tiers_det)
+        K[li] = keep / n_iter * 100
+    return labels, K
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SESSION STATE INIT
-# ══════════════════════════════════════════════════════════════════════════════
+def plot_stress(labels, K, anames, tiers, n_iter):
+    """Tier stability against PERTURBATION MAGNITUDE (not against N)."""
+    TC = {1:'#2E8B57', 2:'#C47A00', 3:'#8B4500', 4:'#777777'}
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=(10, 6), facecolor='white')
+    ax.set_facecolor('#FAFBFC')
+    ax.axhspan(99.5, 100.6, color='#2E8B57', alpha=0.07, zorder=0)
+    ax.axhline(99.5, color='#B22222', ls='--', lw=1.6, zorder=2,
+               label='99.5% robustness threshold')
+    worst = int(np.argmin(K[-1]))
+    for i, a in enumerate(anames):
+        if i == worst:
+            ax.plot(x, K[:, i], '-o', color='#B22222', lw=2.2, ms=6, zorder=5,
+                    label=f'{a} (first to move)')
+        else:
+            ax.plot(x, K[:, i], '-', color='#B8C4D0', lw=1.0, zorder=3)
+    ax.plot([], [], '-', color='#B8C4D0', lw=1.0, label='other alternatives')
+    ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=8.5)
+    ax.set_xlabel('Magnitude of judgement perturbation applied to every pairwise comparison',
+                  fontsize=10, labelpad=8)
+    ax.set_ylabel('% of simulations in which the alternative retains its tier', fontsize=10)
+    ax.set_title('Monte Carlo sensitivity: tier stability against perturbation magnitude',
+                 fontsize=11.5, fontweight='bold', pad=12)
+    lo = max(40, K.min() - 6)
+    ax.set_ylim(lo, 101.5); ax.grid(axis='y', alpha=0.25, zorder=0)
+    ax.legend(loc='lower left', fontsize=8.5, framealpha=0.95)
+    plt.tight_layout()
+    return fig
+
+
+def plot_score_box(all_sim_scores, anames, scores, tiers, breaks, n_iter):
+    """Simulated score range of every alternative against the tier boundaries."""
+    TC = {1:'#2E8B57', 2:'#C47A00', 3:'#8B4500', 4:'#777777'}
+    TN = {1:'Tier 1 — Priority', 2:'Tier 2 — Secondary',
+          3:'Tier 3 — Low priority', 4:'Tier 4 — Marginal'}
+    order = np.argsort(scores)
+    n_a = len(anames)
+    fig, ax = plt.subplots(figsize=(10, max(4.2, n_a*0.46 + 1.6)), facecolor='white')
+    ax.set_facecolor('#FAFBFC')
+    for k, b in enumerate(breaks):
+        ax.axvline(b, color='#B22222', ls='--', lw=1.4, zorder=1,
+                   label='Tier boundary' if k == 0 else None)
+    bp = ax.boxplot([all_sim_scores[:, i] for i in order], vert=False, widths=0.62,
+                    patch_artist=True, whis=(0, 100),
+                    medianprops=dict(color='white', lw=1.6),
+                    flierprops=dict(marker='', ms=0), zorder=3)
+    for patch, i in zip(bp['boxes'], order):
+        patch.set_facecolor(TC[tiers[i]]); patch.set_alpha(0.92)
+        patch.set_edgecolor('#333'); patch.set_linewidth(0.7)
+    for el in ('whiskers', 'caps'):
+        for ln in bp[el]: ln.set_color('#555'); ln.set_linewidth(1.0)
+    ax.set_yticks(range(1, n_a+1))
+    ax.set_yticklabels([anames[i] for i in order], fontsize=9)
+    for y, i in enumerate(order, 1):
+        d = min(abs(scores[i]-b) for b in breaks)
+        half = (all_sim_scores[:, i].max() - all_sim_scores[:, i].min())/2
+        if half > 0:
+            ax.text(all_sim_scores[:, i].max()+0.012, y, f"margin {d/half:.1f}×",
+                    va='center', fontsize=7, color='#666')
+    ax.set_xlabel(f'Composite score $R^k$ across {n_iter:,} perturbed simulations', fontsize=10)
+    ax.set_title('Monte Carlo sensitivity: simulated score range against the tier boundaries',
+                 fontsize=11.5, fontweight='bold', pad=12)
+    ax.set_xlim(-0.02, 1.10); ax.grid(axis='x', alpha=0.25, zorder=0)
+    h = [Patch(facecolor=TC[k], label=TN[k]) for k in sorted(set(tiers))]
+    h.append(plt.Line2D([0], [0], color='#B22222', ls='--', lw=1.4, label='Tier boundary'))
+    ax.legend(handles=h, loc='lower right', fontsize=8, framealpha=0.95)
+    plt.tight_layout()
+    return fig
+
 
 def init_state():
     defaults = dict(
@@ -1927,13 +1920,6 @@ elif S.step == 7:
             fig_download_buttons(fig_wb, "weights_box_plot",
                                  f"Monte Carlo {wlab} Weight Distributions")
             plt.close(fig_wb)
-            if S.all_sim_tiers is not None:
-                fig_st = plot_stability(S.all_sim_tiers, anames, tiers, breaks, S.n_iter)
-                st.pyplot(fig_st, use_container_width=True)
-                fig_download_buttons(fig_st, "tier_stability_chart", "Tier Stability Analysis")
-                plt.close(fig_st)
-            else:
-                st.info("Re-run the simulation once to generate the tier stability chart.")
         else:
             st.info("Run a simulation above to see robustness results and convergence charts here.")
 
