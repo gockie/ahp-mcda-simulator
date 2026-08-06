@@ -1858,9 +1858,9 @@ elif S.step == 7:
             st.markdown("**Weight variability across simulations:**")
             df_mc = pd.DataFrame({
                 'Criterion': cnames,
-                'Your weight': [f"{w:.4f}" for w in weights],
-                'Avg across simulations': [f"{m:.4f}" for m in S.mu],
-                'Variability (σᵢ)': [f"{s:.5f}" for s in sig],
+                'Your weight': weights,                    # float
+                'Avg across simulations': S.mu,            # float
+                'Variability (σᵢ)': sig,                   # float
                 'Stable?': ['Yes' if s<=0.010 else 'Check' for s in sig]
             })
             st.dataframe(df_mc, use_container_width=True, hide_index=True)
@@ -1874,9 +1874,9 @@ elif S.step == 7:
             st.markdown("**Tier stability:**")
             df_st = pd.DataFrame({
                 'Alternative': anames,
-                'Score': [f"{s:.4f}" for s in scores],
+                'Score': scores,                           # float
                 'Tier': [tier_labels_plain.get(t, f"Tier {t}") for t in tiers],
-                'Tier stability': [f"{p:.2f}%" for p in stab],
+                'Tier stability (%)': stab,                # float, column name clarifies unit
                 'Verdict': ['Robust' if p>=99.5 else 'Review' for p in stab]
             })
             st.dataframe(df_st, use_container_width=True, hide_index=True)
@@ -1992,9 +1992,11 @@ elif S.step == 7:
     _pareto_df = pd.DataFrame({
         "Criterion": cnames,
         "Weight": weights,
-        "Cumulative Weight": np.cumsum(weights),
         "Weight Pct": weights * 100,
     }).sort_values("Weight", ascending=False).reset_index(drop=True)
+    # Cumulative weight must be computed AFTER sorting so it matches the sorted order
+    _pareto_df["Cumulative Weight"] = _pareto_df["Weight"].cumsum()
+    _pareto_df = _pareto_df[["Criterion", "Weight", "Cumulative Weight", "Weight Pct"]]
     fig_download_buttons(fig_p, "pareto_weights_chart",
                          "AHP Criterion Weights — Pareto Chart",
                          csv_df=_pareto_df)
@@ -2008,8 +2010,15 @@ elif S.step == 7:
 
     e1,e2 = st.columns(2)
     with e1:
+        # Build a float-score version for export so Excel can chart/sort numerically
+        df_s_export = pd.DataFrame({
+            'Alternative': anames,
+            'Composite Score (0-1)': scores,          # float, not formatted string
+            'Rank': pd.Series(scores).rank(ascending=False).astype(int).values,
+            'Priority Tier': [tier_labels_plain.get(t, f"Tier {t}") for t in tiers],
+        }).sort_values('Rank').reset_index(drop=True)
         st.download_button("📥  Scores and tiers (CSV)",
-            df_s.to_csv(index=False).encode("utf-8-sig"), "scores_tiers.csv", "text/csv",
+            df_s_export.to_csv(index=False).encode("utf-8-sig"), "scores_tiers.csv", "text/csv",
             use_container_width=True)
     with e2:
         df_w_exp = pd.DataFrame({'Criterion':cnames,'Weight':weights,'Share_pct':weights*100})
