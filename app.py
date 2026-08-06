@@ -9,13 +9,6 @@ import pandas as pd
 import io
 import json
 from contextlib import nullcontext
-try:
-    from pptx import Presentation
-    from pptx.util import Inches
-    _PPTX_OK = True
-except ImportError:
-    _PPTX_OK = False
-
 def fig_to_png_bytes(fig, dpi=150):
     """Return a matplotlib figure as PNG bytes."""
     buf = io.BytesIO()
@@ -24,36 +17,23 @@ def fig_to_png_bytes(fig, dpi=150):
     buf.seek(0)
     return buf.getvalue()
 
-def fig_to_pptx_bytes(fig, title="", dpi=150):
-    """Embed a matplotlib figure in a 13.3x7.5 inch PPTX slide and return bytes."""
-    png = fig_to_png_bytes(fig, dpi=dpi)
-    prs = Presentation()
-    prs.slide_width  = Inches(13.3)
-    prs.slide_height = Inches(7.5)
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    if title:
-        from pptx.util import Pt
-        from pptx.dml.color import RGBColor
-        from pptx.enum.text import PP_ALIGN
-        txb = slide.shapes.add_textbox(Inches(0.3), Inches(0.08), Inches(12.7), Inches(0.42))
-        tf  = txb.text_frame
-        p   = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        run = p.add_run(); run.text = title
-        run.font.size = Pt(14); run.font.bold = True
-        run.font.color.rgb = RGBColor(0x1B, 0x3A, 0x5C)
-        run.font.name = "Calibri"
-    pic_y = Inches(0.55) if title else Inches(0.1)
-    pic_h = Inches(6.85) if title else Inches(7.3)
-    slide.shapes.add_picture(io.BytesIO(png), Inches(0.3), pic_y, Inches(12.7), pic_h)
-    buf = io.BytesIO()
-    prs.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
+def df_to_csv_bytes(df):
+    """Return a pandas DataFrame as UTF-8 CSV bytes."""
+    return df.to_csv(index=False).encode("utf-8")
 
-def fig_download_buttons(fig, stem, title=""):
-    """Render PNG and (if pptx available) PPTX download buttons for a figure."""
+def fig_download_buttons(fig, stem, title="", csv_df=None):
+    """Render PNG download button for a figure, and optional CSV button for chart data.
+
+    Pass csv_df (a pandas DataFrame) to add a CSV download button alongside the PNG.
+    The CSV contains the underlying chart data so users can rebuild the chart in Excel
+    or any other tool with full control over colors, decimal places, and formatting.
+    """
     png_bytes = fig_to_png_bytes(fig)
-    c1, c2, c3 = st.columns([1, 1, 4])
+    if csv_df is not None:
+        c1, c2, c3 = st.columns([1, 1, 4])
+    else:
+        c1, c3 = st.columns([1, 5])
+        c2 = None
     with c1:
         st.download_button(
             "📥 Download PNG",
@@ -63,19 +43,16 @@ def fig_download_buttons(fig, stem, title=""):
             use_container_width=True,
             key=f"dl_png_{stem}"
         )
-    with c2:
-        if _PPTX_OK:
-            pptx_bytes = fig_to_pptx_bytes(fig, title=title)
+    if c2 is not None and csv_df is not None:
+        with c2:
             st.download_button(
-                "📥 Download PPTX",
-                data=pptx_bytes,
-                file_name=f"{stem}.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "📥 Download CSV",
+                data=df_to_csv_bytes(csv_df),
+                file_name=f"{stem}.csv",
+                mime="text/csv",
                 use_container_width=True,
-                key=f"dl_pptx_{stem}"
+                key=f"dl_csv_{stem}"
             )
-        else:
-            st.caption("Install python-pptx to enable PPTX download.")
 
 st.set_page_config(
     page_title="AHP-MCDA Simulator",
@@ -675,9 +652,9 @@ EXAMPLE_BANDS = {
     "Leakage via outcrops": 6, "Freshwater constraint": 6, "Evaporites": 6,
 }
 EXAMPLE_ALTS = [
-    "WCSB","Williston Basin","Michigan Basin","NL Offshore","Scotian Basin",
-    "Flemish Pass","Beaufort-Mackenzie","Hudson Bay","St. Lawrence",
-    "Nova Scotia","Arctic Islands","New Brunswick","Pacific Margin",
+    "WCSB","Williston Basin","Michigan Basin","NL Offshore",
+    "Maritimes (onshore)","Maritimes (offshore)","St. Lawrence","Scotian Basin",
+    "Beaufort-Mackenzie","Flemish Pass","Hudson Bay","Arctic Islands","Pacific Margin",
 ]
 
 # Documented mapping rule: Saaty judgement from band distance.
@@ -897,7 +874,7 @@ looks up the raw score, normalises it, and builds the scoring matrix for you.
 ---
 
 **What you get in Step 7 depends on the mode you picked in Step 1.** Rankings, tiers, the
-GVF metric, the Pareto weight chart and the CSV/JSON/PNG/PPTX exports come out of every mode.
+GVF metric, the Pareto weight chart and the CSV/JSON/PNG exports come out of every mode.
 The Consistency Ratio and its diagnostics only exist in the AHP modes, and the robustness suite
 (weight variability, tier stability, convergence charts, weight box plot) only exists in the
 Monte Carlo modes. The panel below this one breaks down exactly what each of the four modes
@@ -984,7 +961,7 @@ to 1, multiplies them through your normalised class scores, and sorts the result
 - Tier membership cards and a ranked bar chart with Jenks-Fisher boundaries drawn in
 - GVF classification quality (above 0.90 = excellent separation), tier count k adjustable 2–6
 - Pareto chart of criterion weights with the cumulative 80% line
-- Downloads: both charts as PNG and PPTX; 4 CSVs (scores and tiers, weights, class definitions,
+- Downloads: both charts as PNG (with CSV data for editable chart rebuilding); 4 CSVs (scores and tiers, weights, class definitions,
   assignments); full JSON
 
 **Results you do not get:** any check that your weights are internally consistent, and any
@@ -1009,7 +986,7 @@ redrawing every weight from a normal distribution centred on your typed value.
 - Convergence charts for the four heaviest criteria, to show whether N was large enough
 - Weight distribution box plot (IQR, ±3σ whiskers, deterministic weight marked)
 - Tier stability chart: all alternatives, plus a panel isolating the five closest to a boundary
-- 2 extra CSVs and 3 extra chart exports; σ and iteration count recorded in the JSON
+- 2 extra CSVs and 3 extra chart PNG+CSV exports; σ and iteration count recorded in the JSON
 
 **Results you do not get:** a consistency check on the weights. And note the honest limit of
 this mode: the uncertainty being tested is one you specified yourself with the σ slider, so the
@@ -1600,7 +1577,7 @@ elif S.step == 6:
         "Scotian Basin":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Good",
             "Leakage via outcrops":"Intermediate",
-            "Basin size":"<200,000 km²","Reservoir temperature":">100°C",
+            "Basin size":">200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Moderate (50–500 Mboe)",
             "Freshwater constraint":"Abundant","Industry maturity":"Mature",
             "Onshore / offshore":"Deep offshore","Accessibility":"Acceptable",
@@ -1616,7 +1593,7 @@ elif S.step == 6:
         "Beaufort-Mackenzie":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"None","Reservoir–seal pairs":"Intermediate",
             "Leakage via outcrops":"Intermediate",
-            "Basin size":">200,000 km²","Reservoir temperature":">100°C",
+            "Basin size":"<200,000 km²","Reservoir temperature":">100°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Minor (<50 Mboe)",
             "Freshwater constraint":"Some","Industry maturity":"Developing",
             "Onshore / offshore":"Onshore","Accessibility":"Difficult",
@@ -1632,19 +1609,27 @@ elif S.step == 6:
         "St. Lawrence":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
             "Evaporites":"Domes","Reservoir–seal pairs":"Intermediate",
             "Leakage via outcrops":"Intermediate",
-            "Basin size":"<2,000 km²","Reservoir temperature":"40–70°C",
+            "Basin size":"<200,000 km²","Reservoir temperature":"40–70°C",
             "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Moderate (50–500 Mboe)",
             "Freshwater constraint":"All fresh","Industry maturity":"Developing",
             "Onshore / offshore":"Onshore","Accessibility":"Easy",
             "Infrastructure":"Moderate","CO₂ source proximity":"Major (within basin)"},
-        "Nova Scotia":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
-            "Evaporites":"None","Reservoir–seal pairs":"Intermediate",
-            "Leakage via outcrops":"High",
-            "Basin size":"<1,000 km²","Reservoir temperature":"<40°C",
-            "Hydrogeological confinement":"Local","Depleted reservoir potential":"Minor (<50 Mboe)",
-            "Freshwater constraint":"Some","Industry maturity":"Developing",
-            "Onshore / offshore":"Onshore","Accessibility":"Acceptable",
-            "Infrastructure":"Moderate","CO₂ source proximity":"Major (within basin)"},
+        "Maritimes (onshore)":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
+            "Evaporites":"Bedded","Reservoir–seal pairs":"Intermediate",
+            "Leakage via outcrops":"Intermediate",
+            "Basin size":"<200,000 km²","Reservoir temperature":"40–70°C",
+            "Hydrogeological confinement":"Intermediate","Depleted reservoir potential":"Minor (<50 Mboe)",
+            "Freshwater constraint":"Some","Industry maturity":"Exploring",
+            "Onshore / offshore":"Onshore","Accessibility":"Easy",
+            "Infrastructure":"Minor","CO₂ source proximity":"Major <200 km"},
+        "Maritimes (offshore)":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
+            "Evaporites":"Bedded","Reservoir–seal pairs":"Intermediate",
+            "Leakage via outcrops":"Low",
+            "Basin size":"<200,000 km²","Reservoir temperature":"70–100°C",
+            "Hydrogeological confinement":"Regional","Depleted reservoir potential":"None",
+            "Freshwater constraint":"Abundant","Industry maturity":"Exploring",
+            "Onshore / offshore":"Shallow offshore","Accessibility":"Difficult",
+            "Infrastructure":"Minor","CO₂ source proximity":"Major <200 km"},
         "Arctic Islands":{"Tectonic stability":"<50 cm/s²","Fault and fracture intensity":"Low",
             "Evaporites":"None","Reservoir–seal pairs":"Poor",
             "Leakage via outcrops":"Intermediate",
@@ -1653,18 +1638,11 @@ elif S.step == 6:
             "Freshwater constraint":"All fresh","Industry maturity":"Unexplored",
             "Onshore / offshore":"Onshore","Accessibility":"Inaccessible",
             "Infrastructure":"None","CO₂ source proximity":"None"},
-        "New Brunswick":{"Tectonic stability":"50–100 cm/s²","Fault and fracture intensity":"Moderate",
-            "Evaporites":"None","Reservoir–seal pairs":"Poor",
-            "Leakage via outcrops":"High",
-            "Basin size":"<600 km²","Reservoir temperature":"<40°C",
-            "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
-            "Freshwater constraint":"All fresh","Industry maturity":"Exploring",
-            "Onshore / offshore":"Onshore","Accessibility":"Acceptable",
-            "Infrastructure":"Minor","CO₂ source proximity":"Major <200 km"},
+
         "Pacific Margin":{"Tectonic stability":">200 cm/s²","Fault and fracture intensity":"High",
             "Evaporites":"None","Reservoir–seal pairs":"Poor",
             "Leakage via outcrops":"Very high",
-            "Basin size":"<1,000 km²","Reservoir temperature":"70–100°C",
+            "Basin size":"<200,000 km²","Reservoir temperature":"70–100°C",
             "Hydrogeological confinement":"Local","Depleted reservoir potential":"None",
             "Freshwater constraint":"Abundant","Industry maturity":"Exploring",
             "Onshore / offshore":"Shallow offshore","Accessibility":"Difficult",
@@ -1918,19 +1896,42 @@ elif S.step == 7:
                        "If curves flatten well before the right edge, you can lower N and re-run.")
             fig_cv = plot_conv(aw, cnames, weights, top_n=min(4,n_c))
             st.pyplot(fig_cv, use_container_width=True)
-            fig_download_buttons(fig_cv, "convergence_chart", "Monte Carlo Weight Convergence")
+            # Build CSV: running mean of each weight per iteration
+            if aw is not None:
+                _conv_arr = np.array(aw)
+                _cum_mean = np.cumsum(_conv_arr, axis=0) / (np.arange(1, len(_conv_arr)+1)[:,None])
+                _conv_df = pd.DataFrame(_cum_mean, columns=cnames)
+                _conv_df.insert(0, "Iteration", range(1, len(_conv_arr)+1))
+            else:
+                _conv_df = None
+            fig_download_buttons(fig_cv, "convergence_chart",
+                                 "Monte Carlo Weight Convergence", csv_df=_conv_df)
             plt.close(fig_cv)
             wlab = "AHP" if S.weight_mode == "expert" else "Direct"
             fig_wb = plot_weights_box(aw, weights, cnames, method_label=wlab)
             st.pyplot(fig_wb, use_container_width=True)
+            # Build CSV: all simulated weights per criterion
+            if aw is not None:
+                _wb_df = pd.DataFrame(np.array(aw), columns=cnames)
+                _wb_df.insert(0, "Simulation", range(1, len(_wb_df)+1))
+            else:
+                _wb_df = None
             fig_download_buttons(fig_wb, "weights_box_plot",
-                                 f"Monte Carlo {wlab} Weight Distributions")
+                                 f"Monte Carlo {wlab} Weight Distributions",
+                                 csv_df=_wb_df)
             plt.close(fig_wb)
             if S.mc_s is not None:
                 fig_sb = plot_score_box(S.mc_s, anames, scores, tiers, breaks, S.n_iter)
                 st.pyplot(fig_sb, use_container_width=True)
+                # Build CSV: all simulated composite scores per alternative
+                if S.mc_s is not None:
+                    _sb_df = pd.DataFrame(np.array(S.mc_s), columns=anames)
+                    _sb_df.insert(0, "Simulation", range(1, len(_sb_df)+1))
+                else:
+                    _sb_df = None
                 fig_download_buttons(fig_sb, "score_distributions",
-                                     "Composite Score Distributions vs Tier Boundaries")
+                                     "Composite Score Distributions vs Tier Boundaries",
+                                     csv_df=_sb_df)
                 plt.close(fig_sb)
         else:
             st.info("Run a simulation above to see robustness results and convergence charts here.")
@@ -1963,7 +1964,15 @@ elif S.step == 7:
         jenks_breaks, gvf = jenks(scores, S.n_tiers)
         fig_s = plot_scores(np.array(anames), scores, tiers, breaks, S.n_tiers)
         st.pyplot(fig_s, use_container_width=True)
-        fig_download_buttons(fig_s, "basin_scores_chart", "Basin Composite Scores and Tier Classification")
+        _scores_df = pd.DataFrame({
+            "Alternative": anames,
+            "Composite Score": scores,
+            "Tier": tiers,
+            "Rank": pd.Series(scores).rank(ascending=False).astype(int).values,
+        }).sort_values("Rank").reset_index(drop=True)
+        fig_download_buttons(fig_s, "basin_scores_chart",
+                             "Basin Composite Scores and Tier Classification",
+                             csv_df=_scores_df)
         plt.close(fig_s)
         st.caption("Bar length = composite score. Colour = tier. "
                    "Dashed lines = Jenks-Fisher tier boundaries (data-driven).")
@@ -1977,7 +1986,15 @@ elif S.step == 7:
                 unsafe_allow_html=True)
     fig_p = plot_pareto(weights, cnames)
     st.pyplot(fig_p, use_container_width=True)
-    fig_download_buttons(fig_p, "pareto_weights_chart", "AHP Criterion Weights — Pareto Chart")
+    _pareto_df = pd.DataFrame({
+        "Criterion": cnames,
+        "Weight": weights,
+        "Cumulative Weight": np.cumsum(weights),
+        "Weight Pct": weights * 100,
+    }).sort_values("Weight", ascending=False).reset_index(drop=True)
+    fig_download_buttons(fig_p, "pareto_weights_chart",
+                         "AHP Criterion Weights — Pareto Chart",
+                         csv_df=_pareto_df)
     plt.close(fig_p)
 
     # ── EXPORT ────────────────────────────────────────────────────────────────
