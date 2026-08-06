@@ -295,7 +295,7 @@ def plot_pareto(w, names):
     for bar, ww in zip(bars, ws):
         ax1.text(bar.get_x() + bar.get_width() / 2,
                  bar.get_height() + max(w) * 0.015,
-                 f'{ww:.4f}', ha='center', va='bottom',
+                 f'{ww:.3f}', ha='center', va='bottom',
                  fontsize=8, fontfamily=FONT, color=DARK, fontweight='bold')
 
     ax1.set_xticks(x)
