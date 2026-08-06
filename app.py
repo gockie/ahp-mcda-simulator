@@ -18,8 +18,11 @@ def fig_to_png_bytes(fig, dpi=150):
     return buf.getvalue()
 
 def df_to_csv_bytes(df):
-    """Return a pandas DataFrame as UTF-8 CSV bytes."""
-    return df.to_csv(index=False).encode("utf-8")
+    """Return a pandas DataFrame as UTF-8 CSV bytes with BOM.
+    The BOM (utf-8-sig) tells Excel to read the file as UTF-8,
+    preventing garbled characters like CO₂ appearing as COâ‚‚.
+    """
+    return df.to_csv(index=False).encode("utf-8-sig")
 
 def fig_download_buttons(fig, stem, title="", csv_df=None):
     """Render PNG download button for a figure, and optional CSV button for chart data.
@@ -2006,12 +2009,12 @@ elif S.step == 7:
     e1,e2 = st.columns(2)
     with e1:
         st.download_button("📥  Scores and tiers (CSV)",
-            df_s.to_csv(index=False), "scores_tiers.csv", "text/csv",
+            df_s.to_csv(index=False).encode("utf-8-sig"), "scores_tiers.csv", "text/csv",
             use_container_width=True)
     with e2:
         df_w_exp = pd.DataFrame({'Criterion':cnames,'Weight':weights,'Share_pct':weights*100})
         st.download_button("📥  Criterion weights (CSV)",
-            df_w_exp.to_csv(index=False), "weights.csv", "text/csv",
+            df_w_exp.to_csv(index=False).encode("utf-8-sig"), "weights.csv", "text/csv",
             use_container_width=True)
 
     e3,e4 = st.columns(2)
@@ -2024,7 +2027,7 @@ elif S.step == 7:
                 class_export.append({'Criterion':cn,'Class':j,'Label':lbl,'Raw_score':sc})
         df_cls=pd.DataFrame(class_export)
         st.download_button("📥  Class definitions (CSV)",
-            df_cls.to_csv(index=False), "class_definitions.csv", "text/csv",
+            df_cls.to_csv(index=False).encode("utf-8-sig"), "class_definitions.csv", "text/csv",
             use_container_width=True)
     with e4:
         # Export assignments
@@ -2036,18 +2039,18 @@ elif S.step == 7:
             assign_export.append(row)
         df_asgn=pd.DataFrame(assign_export)
         st.download_button("📥  Class assignments (CSV)",
-            df_asgn.to_csv(index=False), "assignments.csv", "text/csv",
+            df_asgn.to_csv(index=False).encode("utf-8-sig"), "assignments.csv", "text/csv",
             use_container_width=True)
 
     if S.ran_mc and S.sigma is not None and df_mc is not None and df_st is not None:
         e5,e6 = st.columns(2)
         with e5:
             st.download_button("📥  Monte Carlo weight stats (CSV)",
-                df_mc.to_csv(index=False), "mc_weights.csv", "text/csv",
+                df_mc.to_csv(index=False).encode("utf-8-sig"), "mc_weights.csv", "text/csv",
                 use_container_width=True)
         with e6:
             st.download_button("📥  Tier stability results (CSV)",
-                df_st.to_csv(index=False), "tier_stability.csv", "text/csv",
+                df_st.to_csv(index=False).encode("utf-8-sig"), "tier_stability.csv", "text/csv",
                 use_container_width=True)
 
     # Full JSON export
