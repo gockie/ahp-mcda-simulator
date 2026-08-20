@@ -266,8 +266,125 @@ def run_mc(weights, P, pairwise_M, n_iter, p_perturb, w_sigma_pct=3.0):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PLOTS
+# FRAMEWORK VALIDATION — objective weights, cross-check, LOO, retrodiction
 # ══════════════════════════════════════════════════════════════════════════════
+
+def critic_weights(P):
+    """CRITIC objective weights from the decision matrix P (no expert input).
+    Higher weight to criteria that are both variable and uncorrelated."""
+    sd = P.std(axis=0, ddof=1)
+    R = np.nan_to_num(np.corrcoef(P, rowvar=False), nan=0.0)
+    C = sd * (1 - R).sum(axis=0)
+    tot = C.sum()
+    return C / tot if tot > 0 else np.ones(P.shape[1]) / P.shape[1]
+
+
+def entropy_weights(P):
+    """Shannon-entropy objective weights from P (no expert input).
+    Higher weight to criteria with greater information (variation)."""
+    m = P.shape[0]
+    cs = P.sum(axis=0); cs[cs == 0] = 1e-12
+    Pn = P / cs
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lp = np.where(Pn > 0, np.log(Pn), 0.0)
+    e = -(Pn * lp).sum(axis=0) / np.log(m)
+    d = 1 - e
+    tot = d.sum()
+    return d / tot if tot > 0 else np.ones(P.shape[1]) / P.shape[1]
+
+
+def objective_weights(P):
+    """Average of CRITIC and Entropy weights: the w_obj data-driven vector."""
+    w = 0.5 * critic_weights(P) + 0.5 * entropy_weights(P)
+    tot = w.sum()
+    return w / tot if tot > 0 else np.ones(P.shape[1]) / P.shape[1]
+
+
+def weighted_spearman(r1, r2):
+    """Weighted Spearman correlation (Pinto da Costa & Soares) that emphasises
+    agreement at the top of the ranking. r1, r2 are score vectors where a
+    higher score means a better rank."""
+    n = len(r1)
+    if n < 2:
+        return 1.0
+    R1 = np.argsort(np.argsort(-np.asarray(r1))) + 1  # rank 1 = best
+    R2 = np.argsort(np.argsort(-np.asarray(r2))) + 1
+    num = 6 * np.sum((R1 - R2) ** 2 * ((n - R1 + 1) + (n - R2 + 1)))
+    den = n * (n**3 + n**2 - n - 1)
+    return 1 - num / den if den != 0 else 1.0
+
+
+def kendall_tau(r1, r2):
+    """Kendall Tau rank correlation between two score vectors."""
+    n = len(r1)
+    concordant = discordant = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            s1 = np.sign(r1[i] - r1[j])
+            s2 = np.sign(r2[i] - r2[j])
+            if s1 * s2 > 0: concordant += 1
+            elif s1 * s2 < 0: discordant += 1
+    tot = concordant + discordant
+    return (concordant - discordant) / tot if tot > 0 else 1.0
+
+
+def run_crosscheck(weights_ahp, P, anames, top_n=4):
+    """Objective-weighting cross-check. Recompute the ranking under Equal,
+    CRITIC, and Entropy weights and compare with the AHP ranking."""
+    n_c = P.shape[1]
+    schemes = {
+        "Equal": np.ones(n_c) / n_c,
+        "CRITIC": critic_weights(P),
+        "Entropy": entropy_weights(P),
+    }
+    ahp_scores = P @ weights_ahp
+    ahp_order = list(np.argsort(-ahp_scores))
+    rows = []
+    weight_vectors = {"AHP (expert)": weights_ahp}
+    for name, w in schemes.items():
+        sc = P @ w
+        rho = weighted_spearman(ahp_scores, sc)
+        tau = kendall_tau(ahp_scores, sc)
+        order = list(np.argsort(-sc))
+        top_match = order[:top_n] == ahp_order[:top_n]
+        rows.append({
+            "Scheme": name, "Weighted Spearman": rho, "Kendall Tau": tau,
+            "Top-4 identical": "Yes" if top_match else "No",
+        })
+        weight_vectors[name] = w
+    top4_names = [anames[i] for i in ahp_order[:top_n]]
+    return rows, weight_vectors, top4_names, ahp_order
+
+
+def run_loo(weights_ahp, P, anames, n_tiers, jenks_fn, assign_fn):
+    """Leave-One-Out criterion sensitivity. Remove each criterion, renormalise,
+    recompute ranking and tiers, and report Spearman + tier stability."""
+    n_c = P.shape[1]; n_a = P.shape[0]
+    full_scores = P @ weights_ahp
+    full_breaks, _ = jenks_fn(full_scores, n_tiers)
+    full_tiers = assign_fn(full_scores, full_breaks)
+    rhos = []; identical = 0
+    for i in range(n_c):
+        keep = [c for c in range(n_c) if c != i]
+        w = weights_ahp[keep]; w = w / w.sum()
+        sc = P[:, keep] @ w
+        rhos.append(weighted_spearman(full_scores, sc))
+        bks, _ = jenks_fn(sc, n_tiers)
+        trs = assign_fn(sc, bks)
+        if np.array_equal(trs, full_tiers):
+            identical += 1
+    rhos = np.array(rhos)
+    return {
+        "min_spearman": float(rhos.min()),
+        "min_criterion_idx": int(rhos.argmin()),
+        "mean_spearman": float(rhos.mean()),
+        "identical_tier_count": identical,
+        "n_criteria": n_c,
+        "all_rhos": rhos,
+    }
+
+
+
 
 FONT='DejaVu Sans'; DARK='#1B3A5C'; MED='#2E75B6'; TEAL='#0E7C7B'
 AMBER='#C47A00'; GREEN='#2E8B57'; RED='#B22222'; PURPLE='#6A4C93'
@@ -2002,7 +2119,138 @@ elif S.step == 7:
                          csv_df=_pareto_df)
     plt.close(fig_p)
 
-    # ── EXPORT ────────────────────────────────────────────────────────────────
+    # ── WEIGHT COMPARISON TABLE (Table 3) — expert modes only ─────────────────
+    if S.weight_mode == "expert" and n_a >= 2:
+        st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
+                    'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
+                    'margin:1.2rem 0 .9rem;">Weight comparison: expert vs objective</div>',
+                    unsafe_allow_html=True)
+        st.markdown("""<div class="callout">
+        Your expert AHP weights are compared with two objective schemes derived
+        directly from the decision matrix, with no expert input: CRITIC (variation
+        and low redundancy) and Entropy (information content). Their average is the
+        objective weight vector w<sub>obj</sub>. Strong agreement here is the first
+        sign that the ranking does not depend on the expert weights alone.
+        </div>""", unsafe_allow_html=True)
+        w_crit = critic_weights(P); w_ent = entropy_weights(P)
+        w_obj = objective_weights(P)
+        df_wcomp = pd.DataFrame({
+            "Criterion": cnames,
+            "AHP (expert)": [f"{v:.4f}" for v in weights],
+            "CRITIC": [f"{v:.4f}" for v in w_crit],
+            "Entropy": [f"{v:.4f}" for v in w_ent],
+            "Objective avg": [f"{v:.4f}" for v in w_obj],
+        })
+        st.dataframe(df_wcomp, use_container_width=True, hide_index=True)
+        _wcomp_csv = pd.DataFrame({
+            "Criterion": cnames, "AHP_expert": weights,
+            "CRITIC": w_crit, "Entropy": w_ent, "Objective_avg": w_obj,
+        })
+        st.download_button("📥  Weight comparison (CSV)",
+            data=df_to_csv_bytes(_wcomp_csv),
+            file_name="weight_comparison_table.csv", mime="text/csv",
+            key="dl_wcomp")
+
+    # ── FRAMEWORK VALIDATION — expert modes only ──────────────────────────────
+    if S.weight_mode == "expert" and n_a >= 4:
+        st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
+                    'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
+                    'margin:1.4rem 0 .9rem;">Framework validation</div>',
+                    unsafe_allow_html=True)
+        st.markdown("""<div class="callout tip">
+        These checks test whether your ranking can be validated beyond the expert
+        weights. Each is independent of the weight elicitation.
+        </div>""", unsafe_allow_html=True)
+
+        # --- Check 1: Objective-weighting cross-check ---
+        st.markdown("**Check 1 — Objective-weighting cross-check**")
+        st.caption("Recomputes the ranking under Equal, CRITIC, and Entropy weights "
+                   "(no expert input). If the top alternatives hold, the ranking is "
+                   "not an artefact of your weight choices.")
+        cc_rows, _wv, top4_names, _order = run_crosscheck(weights, P, anames, top_n=4)
+        df_cc = pd.DataFrame([{
+            "Scheme": r["Scheme"],
+            "Weighted Spearman": f"{r['Weighted Spearman']:.3f}",
+            "Kendall Tau": f"{r['Kendall Tau']:.3f}",
+            "Top-4 identical": r["Top-4 identical"],
+        } for r in cc_rows])
+        st.dataframe(df_cc, use_container_width=True, hide_index=True)
+        all_top4 = all(r["Top-4 identical"] == "Yes" for r in cc_rows)
+        if all_top4:
+            st.success(f"Top-4 basins identical under every objective scheme: "
+                       f"{', '.join(top4_names)}.")
+        else:
+            st.warning("The top-4 set changes under at least one objective scheme; "
+                       "interpret the ranking with that in mind.")
+        st.download_button("📥  Cross-check results (CSV)",
+            data=df_to_csv_bytes(df_cc),
+            file_name="objective_crosscheck.csv", mime="text/csv",
+            key="dl_crosscheck")
+
+        # --- Check 2: Leave-One-Out ---
+        st.markdown("**Check 2 — Leave-One-Out criterion sensitivity**")
+        st.caption("Removes each criterion in turn, renormalises the remaining "
+                   "weights, and recomputes the ranking and tiers. Tests whether any "
+                   "single criterion drives the result.")
+        loo = run_loo(weights, P, anames, S.n_tiers, jenks, assign_tiers)
+        lc1, lc2, lc3 = st.columns(3)
+        lc1.metric("Min weighted Spearman", f"{loo['min_spearman']:.3f}",
+                   help=f"Lowest correlation across all {loo['n_criteria']} removals, "
+                        f"when {cnames[loo['min_criterion_idx']]} is removed.")
+        lc2.metric("Mean weighted Spearman", f"{loo['mean_spearman']:.3f}")
+        lc3.metric("Identical tier vectors",
+                   f"{loo['identical_tier_count']} / {loo['n_criteria']}")
+        st.caption(f"Most influential criterion (largest ranking shift when removed): "
+                   f"{cnames[loo['min_criterion_idx']]}.")
+        _loo_csv = pd.DataFrame({
+            "Criterion removed": cnames,
+            "Weighted Spearman vs full model": loo["all_rhos"],
+        })
+        st.download_button("📥  Leave-One-Out results (CSV)",
+            data=df_to_csv_bytes(_loo_csv),
+            file_name="leave_one_out.csv", mime="text/csv",
+            key="dl_loo")
+
+        # --- Check 3: External-anchor retrodiction (optional) ---
+        st.markdown("**Check 3 — External-anchor retrodiction (optional)**")
+        st.caption("If you have independent, real-world referents (for example, "
+                   "sites where projects already operate), select them below. The app "
+                   "tests whether your ranking places them at the top and reports the "
+                   "probability of that happening by chance.")
+        anchor_sel = st.multiselect(
+            "Select the external-anchor alternatives (known independent referents)",
+            options=list(anames), key="retro_anchors",
+            help="These should be chosen from outside the model, e.g. operational "
+                 "projects, not picked because they scored well here.")
+        if anchor_sel:
+            import math
+            k = len(anchor_sel)
+            order = list(np.argsort(-scores))
+            ranked_names = [anames[i] for i in order]
+            anchor_ranks = sorted(ranked_names.index(a) + 1 for a in anchor_sel)
+            top_k_positions = set(range(1, k + 1))
+            in_top_k = all(r in top_k_positions for r in anchor_ranks)
+            top_half = max(2, S.n_tiers)  # top-tier-ish set size fallback
+            # Probability the k anchors land in the top k by chance
+            def comb(n, r):
+                return math.comb(n, r) if r <= n else 0
+            p_topk = 1 / comb(n_a, k) if comb(n_a, k) > 0 else float("nan")
+            rc1, rc2 = st.columns(2)
+            rc1.metric("Anchor ranks", ", ".join(str(r) for r in anchor_ranks))
+            rc2.metric("P(top-k by chance)", f"{p_topk:.4f}")
+            if in_top_k:
+                st.success(f"All {k} external anchors fall in the top {k} ranked "
+                           f"alternatives. Probability under random placement: "
+                           f"p = {p_topk:.4f}. The ranking recovers the independent "
+                           f"referents.")
+            else:
+                worst = max(anchor_ranks)
+                p_within = comb(worst, k) / comb(n_a, k) if comb(n_a, k) > 0 else float("nan")
+                st.info(f"The anchors occupy ranks {', '.join(map(str, anchor_ranks))}. "
+                        f"They fall within the top {worst}; probability of landing "
+                        f"within the top {worst} by chance: p = {p_within:.4f}.")
+
+
     st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
                 'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
                 'margin:1.2rem 0 .9rem;">Download results</div>',
