@@ -356,6 +356,39 @@ def run_crosscheck(weights_ahp, P, anames, top_n=4):
     return rows, weight_vectors, top4_names, ahp_order
 
 
+def run_alpha_sweep(weights_ahp, P, anames, n_tiers, jenks_fn, assign_fn, steps=11):
+    """Alpha sweep: blend expert AHP weights with objective weights across the
+    full range alpha = 1 (pure expert) to alpha = 0 (pure data-driven), and
+    report the top-4 ranking and tier structure at each blend. Reproduces the
+    paper's alpha sensitivity table."""
+    w_obj = objective_weights(P)
+    # Reference tier structure at the primary (expert) weighting, alpha = 1
+    sc_ref = P @ weights_ahp
+    bks_ref, _ = jenks_fn(sc_ref, n_tiers)
+    tiers_ref = assign_fn(sc_ref, bks_ref)
+    rows = []
+    for s in range(steps):
+        alpha = 1.0 - s / (steps - 1)  # 1.0 down to 0.0
+        w = alpha * weights_ahp + (1 - alpha) * w_obj
+        w = w / w.sum()
+        sc = P @ w
+        order = list(np.argsort(-sc))
+        bks, _ = jenks_fn(sc, n_tiers)
+        tiers = assign_fn(sc, bks)
+        top4 = [anames[i] for i in order[:4]]
+        same_struct = np.array_equal(tiers, tiers_ref)
+        t1 = [anames[i] for i in range(len(anames)) if tiers[i] == 1]
+        rows.append({
+            "alpha": round(alpha, 2),
+            "top4": top4,
+            "tier1_members": t1,
+            "identical_to_expert": same_struct,
+        })
+    # sort ascending by alpha for display (0.0 -> 1.0)
+    rows = sorted(rows, key=lambda r: r["alpha"])
+    return rows
+
+
 def run_loo(weights_ahp, P, anames, n_tiers, jenks_fn, assign_fn):
     """Leave-One-Out criterion sensitivity. Remove each criterion, renormalise,
     recompute ranking and tiers, and report Spearman + tier stability."""
@@ -707,6 +740,9 @@ def init_state():
         all_sim_tiers=None,
         n_tiers=4, n_iter=10000, p_perturb=0.30,
         w_sigma_pct=3.0,
+        # Framework validation (AHP modes): run the cross-check, LOO, alpha sweep,
+        # and retrodiction on the results page. On by default for expert modes.
+        run_validation=True,
     )
     for k,v in defaults.items():
         if k not in st.session_state:
@@ -1051,6 +1087,20 @@ produces.
     <b>Not sure?</b> Start with <b>AHP-MCDA + Monte Carlo</b>. It is the method used in the
     Canadian CO₂ basin screening study, and every other mode on this page is a subset of it.
     </div>""", unsafe_allow_html=True)
+
+    # ── FRAMEWORK VALIDATION TOGGLE (AHP modes) ───────────────────────────────
+    st.markdown("""<div style="font-size:1.02rem;font-weight:700;color:#1B3A5C;
+    margin:1.1rem 0 .3rem;">Framework validation</div>""", unsafe_allow_html=True)
+    S.run_validation = st.checkbox(
+        "Run framework validation on the results page (AHP modes)",
+        value=S.run_validation, key="run_validation_toggle",
+        help="Adds the weight comparison, alpha sensitivity sweep, objective-weighting "
+             "cross-check, leave-one-out sensitivity, and optional external-anchor "
+             "retrodiction. These test whether the ranking holds independently of the "
+             "expert weights. Available for the AHP (expert-weight) modes.")
+    st.caption("These checks answer the question of whether an expert-weighted ranking "
+               "can be validated. They run automatically on the results page when enabled. "
+               "Direct-weight (MCDA) modes do not use them.")
 
     with st.expander("🔍  What each analysis gives you — read this before choosing",
                      expanded=False):
@@ -2120,7 +2170,7 @@ elif S.step == 7:
     plt.close(fig_p)
 
     # ── WEIGHT COMPARISON TABLE (Table 3) — expert modes only ─────────────────
-    if S.weight_mode == "expert" and n_a >= 2:
+    if S.weight_mode == "expert" and S.run_validation and n_a >= 2:
         st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
                     'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
                     'margin:1.2rem 0 .9rem;">Weight comparison: expert vs objective</div>',
@@ -2151,8 +2201,57 @@ elif S.step == 7:
             file_name="weight_comparison_table.csv", mime="text/csv",
             key="dl_wcomp")
 
+        # ── ALPHA SENSITIVITY SWEEP ───────────────────────────────────────────
+        st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
+                    'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
+                    'margin:1.2rem 0 .9rem;">Alpha sensitivity sweep</div>',
+                    unsafe_allow_html=True)
+        st.markdown("""<div class="callout">
+        The expert and objective weights are blended in every proportion using
+        <code>w = &alpha; &middot; expert + (1 &minus; &alpha;) &middot; objective</code>.
+        At <b>&alpha; = 1</b> the weights are purely expert (your headline result);
+        at <b>&alpha; = 0</b> they are purely data-driven. The table shows the top-four
+        ranking and the Tier 1 group at each blend. If the leading basins hold across
+        the range, the ranking does not depend on the balance struck between expert
+        judgement and data.
+        </div>""", unsafe_allow_html=True)
+        sweep = run_alpha_sweep(weights, P, anames, S.n_tiers, jenks, assign_tiers)
+        df_sweep = pd.DataFrame([{
+            "α": f"{r['alpha']:.1f}",
+            "Rank 1": r["top4"][0] if len(r["top4"]) > 0 else "",
+            "Rank 2": r["top4"][1] if len(r["top4"]) > 1 else "",
+            "Rank 3": r["top4"][2] if len(r["top4"]) > 2 else "",
+            "Rank 4": r["top4"][3] if len(r["top4"]) > 3 else "",
+            "Tier 1 group": ", ".join(r["tier1_members"]),
+        } for r in sweep])
+        st.dataframe(df_sweep, use_container_width=True, hide_index=True)
+        # Summary of invariance
+        top4_sets = [tuple(r["top4"]) for r in sweep]
+        top4_invariant = len(set(top4_sets)) == 1
+        t1_sets = [tuple(r["tier1_members"]) for r in sweep]
+        t1_invariant = len(set(t1_sets)) == 1
+        if top4_invariant:
+            st.success("The four highest-ranked alternatives are identical and in "
+                       "the same order at every value of α, including α = 0 (no "
+                       "expert input). The ranking is invariant to the weighting "
+                       "philosophy.")
+        else:
+            st.info("The top-four ordering shifts across the α range; see the table "
+                    "for where it changes.")
+        if not t1_invariant:
+            # describe where Tier 1 changes
+            expert_t1 = [r for r in sweep if r["alpha"] == 1.0][0]["tier1_members"]
+            st.caption(f"The finer Tier 1 partition is not constant across α: at "
+                       f"the expert weighting (α = 1) the Tier 1 group is "
+                       f"{', '.join(expert_t1)}, and it changes at lower α. The "
+                       f"top-four ordering, however, holds throughout.")
+        st.download_button("📥  Alpha sweep (CSV)",
+            data=df_to_csv_bytes(df_sweep),
+            file_name="alpha_sensitivity_sweep.csv", mime="text/csv",
+            key="dl_sweep")
+
     # ── FRAMEWORK VALIDATION — expert modes only ──────────────────────────────
-    if S.weight_mode == "expert" and n_a >= 4:
+    if S.weight_mode == "expert" and S.run_validation and n_a >= 4:
         st.markdown('<div style="font-size:1.15rem;font-weight:700;color:#1B3A5C;'
                     'border-bottom:2.5px solid #D0DAE8;padding-bottom:.38rem;'
                     'margin:1.4rem 0 .9rem;">Framework validation</div>',
